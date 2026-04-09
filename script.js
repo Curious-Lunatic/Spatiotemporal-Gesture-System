@@ -10,13 +10,29 @@ const imuChart = new Chart(ctx, {
             { label: 'Hand Z', borderColor: '#448aff', data: [], tension: 0.2 }
         ]
     },
-    options: { 
+options: { 
         responsive: true, 
         animation: false, 
-        scales: { y: { min: -20, max: 20 } },
-        plugins: { legend: { labels: { color: 'white' } } }
+        scales: { 
+            y: { 
+                min: -20, max: 20,
+                grid: { display: false }, // Hides horizontal lines
+                ticks: { font: { family: "'JetBrains Mono', monospace" } }
+            },
+            x: {
+                grid: { display: false }, // Hides vertical lines
+                ticks: { display: false } // Hides X-axis numbers for a cleaner look
+            }
+        },
+        plugins: { 
+            legend: { 
+                labels: { 
+                    color: '#B3B3B3',
+                    font: { family: "'Inter', sans-serif" }
+                } 
+            } 
+        }
     }
-});
 
 // --- 2. Authentication State Management ---
 let savedTemplate = [];
