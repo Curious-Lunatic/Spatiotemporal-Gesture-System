@@ -59,12 +59,20 @@
     <h1>Spatio-Temporal Auth Engine</h1>
     <p>Live MPU6050 DTW Processing</p>
 
-    <div class="controls">
+<div class="controls">
         <button id="connectBtn">Connect to ESP32</button>
         <button id="recordTemplateBtn" disabled>1. Record Password</button>
         <button id="testGestureBtn" disabled>2. Test Login</button>
     </div>
-    <div id="statusText" style="color: #bb86fc;">Status: Waiting to connect...</div>
+    
+    <div style="display: flex; gap: 20px; margin: 15px 0; background: #1e1e1e; padding: 15px; border-radius: 8px;">
+        <div><strong>Zone 1 (US1):</strong> <span id="us1Label">Waiting...</span></div>
+        <div><strong>Zone 2 (US2):</strong> <span id="us2Label">Waiting...</span></div>
+        <div><strong>IR 1:</strong> <span id="ir1Label">Waiting...</span></div>
+        <div><strong>IR 2:</strong> <span id="ir2Label">Waiting...</span></div>
+    </div>
+
+    <div id="statusText" style="color: #bb86fc; font-weight: bold; font-size: 1.2rem;">Status: Waiting to connect...</div>
 
     <div class="chart-container">
         <canvas id="imuChart"></canvas>
