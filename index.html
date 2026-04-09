@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cool Shit</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        h1 { margin-bottom: 5px; }
+        .controls { margin-bottom: 20px; }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #bb86fc;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background-color: #9965f4; }
+        .chart-container {
+            width: 80%;
+            max-width: 800px;
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Spatio-Temporal Tracker</h1>
+    <p>Live MPU6050 Acceleration Data</p>
+
+    <div class="controls">
+        <button id="connectBtn">Connect to ESP32</button>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="imuChart"></canvas>
+    </div>
+
+    <script>
+        // --- 1. Set up the Chart ---
+        const ctx = document.getElementById('imuChart').getContext('2d');
+        const imuChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Time labels
+                datasets: [
+                    { label: 'Accel X', borderColor: '#ff5252', data: [], tension: 0.2 },
+                    { label: 'Accel Y', borderColor: '#4caf50', data: [], tension: 0.2 },
+                    { label: 'Accel Z', borderColor: '#448aff', data: [], tension: 0.2 }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: false, // Turn off animation for better performance with live data
+                scales: {
+                    y: { min: -20, max: 20 } // Gravity is ~9.8, so +/- 20 gives good headroom
+                }
+            }
+        });
+
+        // --- 2. Web Serial API Logic ---
+        let port;
+        let reader;
+
+        async function connectSerial() {
+            try {
+                // Prompt user to select the ESP32 COM port
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+
+                document.getElementById('connectBtn').innerText = "Connected!";
+                document.getElementById('connectBtn').style.backgroundColor = "#4caf50";
+
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                reader = textDecoder.readable.getReader();
+
+                let buffer = "";
+
+                // Continuous loop to read data
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) { reader.releaseLock(); break; }
+                    
+                    buffer += value;
+                    let lines = buffer.split('\n');
+                    
+                    // Keep the last incomplete line in the buffer
+                    buffer = lines.pop(); 
+
+                    for (let line of lines) {
+                        line = line.trim();
+                        if (line) {
+                            updateChart(line);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error accessing serial port:", error);
+            }
+        }
+
+        // --- 3. Process Data and Update Chart ---
+        let timeCount = 0;
+        function updateChart(dataString) {
+            // Split the "X,Y,Z" string into an array
+            const values = dataString.split(',');
+            if (values.length !== 3) return; 
+
+            const x = parseFloat(values[0]);
+            const y = parseFloat(values[1]);
+            const z = parseFloat(values[2]);
+
+            // Add new data to the chart
+            imuChart.data.labels.push(timeCount++);
+            imuChart.data.datasets[0].data.push(x);
+            imuChart.data.datasets[1].data.push(y);
+            imuChart.data.datasets[2].data.push(z);
+
+            // Keep the chart moving by removing old data points (keep last 50)
+            if (imuChart.data.labels.length > 50) {
+                imuChart.data.labels.shift();
+                imuChart.data.datasets[0].data.shift();
+                imuChart.data.datasets[1].data.shift();
+                imuChart.data.datasets[2].data.shift();
+            }
+
+            imuChart.update();
+        }
+
+        // Attach event listener to button
+        document.getElementById('connectBtn').addEventListener('click', connectSerial);
+    </script>
+</body>
+</html>
