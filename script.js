@@ -80,91 +80,97 @@ testBtn.addEventListener('click', () => {
     }, 5000); 
 });
 
-// --- 3. The DTW Engine ---
-function calculateDTW(template, liveGesture) {
-    const n = template.length;
-    const m = liveGesture.length;
-    if (n === 0 || m === 0) return Infinity;
+// ... (Keep the Chart setup and DTW function from the previous step) ...
 
-    const dtw = Array.from({ length: n + 1 }, () => Array(m + 1).fill(Infinity));
-    dtw[0][0] = 0;
+// DOM Elements for Environment
+const us1Label = document.getElementById('us1Label');
+const us2Label = document.getElementById('us2Label');
+const ir1Label = document.getElementById('ir1Label');
+const ir2Label = document.getElementById('ir2Label');
 
-    for (let i = 1; i <= n; i++) {
-        for (let j = 1; j <= m; j++) {
-            const dx = template[i-1].x - liveGesture[j-1].x;
-            const dy = template[i-1].y - liveGesture[j-1].y;
-            const dz = template[i-1].z - liveGesture[j-1].z;
-            const cost = Math.sqrt(dx*dx + dy*dy + dz*dz);
+// Global environment variables to hold the latest readings
+let currentUS1 = 999; 
+let currentUS2 = 999;
 
-            dtw[i][j] = cost + Math.min(dtw[i-1][j], dtw[i][j-1], dtw[i-1][j-1]);
-        }
+testBtn.addEventListener('click', () => {
+    if (savedTemplate.length === 0) return alert("Please record a password first!");
+    
+    // --- ENVIRONMENTAL SECURITY GATE ---
+    // If the user is standing further than 60cm from Ultrasonic 1, deny immediately.
+    if (currentUS1 > 60) {
+        statusText.innerText = `❌ ACCESS DENIED: User not in secure physical zone (${currentUS1}cm).`;
+        statusText.style.color = "#ff5252";
+        return; 
     }
-    return dtw[n][m] / Math.max(n, m);
-}
 
-// --- 4. Web Serial API & Data Processing ---
-let port;
-let reader;
-let timeCount = 0;
-
-async function connectSerial() {
-    try {
-        port = await navigator.serial.requestPort();
-        await port.open({ baudRate: 115200 });
+    currentTest = []; 
+    isTesting = true;
+    recordBtn.disabled = true; testBtn.disabled = true;
+    statusText.innerText = "Status: TESTING LOGIN... (Takes 5 seconds)";
+    statusText.style.color = "#ffb74d";
+    
+    setTimeout(() => {
+        isTesting = false;
+        recordBtn.disabled = false; testBtn.disabled = false;
         
-        connectBtn.innerText = "Connected!";
-        connectBtn.style.backgroundColor = "#4caf50";
-        recordBtn.disabled = false;
-        statusText.innerText = "Status: Ready to Record.";
-        statusText.style.color = "#bb86fc";
+        const dtwScore = calculateMultiDTW(savedTemplate, currentTest);
+        const THRESHOLD = 35.0; 
+        
+        if (dtwScore < THRESHOLD) {
+            statusText.innerText = `✅ AUTHENTICATED! (Score: ${dtwScore.toFixed(2)})`;
+            statusText.style.color = "#4caf50";
+        } else {
+            statusText.innerText = `❌ ACCESS DENIED! Gesture Failed (Score: ${dtwScore.toFixed(2)})`;
+            statusText.style.color = "#ff5252";
+        }
+    }, 5000); 
+});
 
-        const textDecoder = new TextDecoderStream();
-        port.readable.pipeTo(textDecoder.writable);
-        reader = textDecoder.readable.getReader();
-        let buffer = "";
-
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            
-            buffer += value;
-            let lines = buffer.split('\n');
-            buffer = lines.pop(); 
-
+// --- Web Serial API & 16-Variable Parsing ---
+// ... (Inside your connectSerial() while loop) ...
             for (let line of lines) {
                 line = line.trim();
                 if (line) {
-                    const values = line.split(',');
-                    if (values.length !== 3) continue; 
+                    const vals = line.split(',').map(Number);
+                    // NOW WE EXPECT 16 VALUES!
+                    if (vals.length !== 16 || vals.includes(NaN)) continue; 
                     
-                    const x = parseFloat(values[0]);
-                    const y = parseFloat(values[1]);
-                    const z = parseFloat(values[2]);
-                    const dataPoint = { x: x, y: y, z: z };
+                    // 1. Extract IMU Data (0-11)
+                    const dataPoint = {
+                        x1: vals[0], y1: vals[1], z1: vals[2],
+                        x2: vals[3], y2: vals[4], z2: vals[5],
+                        x3: vals[6], y3: vals[7], z3: vals[8],
+                        x4: vals[9], y4: vals[10], z4: vals[11]
+                    };
 
+                    // 2. Extract Environment Data (12-15)
+                    currentUS1 = vals[12];
+                    currentUS2 = vals[13];
+                    const ir1 = vals[14];
+                    const ir2 = vals[15];
+
+                    // 3. Update the UI Dashboard
+                    us1Label.innerText = currentUS1 === 999 ? "Out of Range" : currentUS1 + " cm";
+                    us2Label.innerText = currentUS2 === 999 ? "Out of Range" : currentUS2 + " cm";
+                    // IR sensors usually read 0 when an object is close, 1 when clear
+                    ir1Label.innerText = ir1 === 0 ? "⚠️ BLOCKED" : "Clear";
+                    ir2Label.innerText = ir2 === 0 ? "⚠️ BLOCKED" : "Clear";
+                    ir1Label.style.color = ir1 === 0 ? "#ff5252" : "#4caf50";
+                    ir2Label.style.color = ir2 === 0 ? "#ff5252" : "#4caf50";
+
+                    // 4. Save data if recording/testing
                     if (isRecordingTemplate) savedTemplate.push(dataPoint);
                     if (isTesting) currentTest.push(dataPoint);
 
+                    // 5. Update Chart (Still just plotting IMU 1 X,Y,Z to keep it readable)
                     imuChart.data.labels.push(timeCount++);
-                    imuChart.data.datasets[0].data.push(x);
-                    imuChart.data.datasets[1].data.push(y);
-                    imuChart.data.datasets[2].data.push(z);
-                    
+                    imuChart.data.datasets[0].data.push(vals[0]);
+                    imuChart.data.datasets[1].data.push(vals[1]);
+                    imuChart.data.datasets[2].data.push(vals[2]);
                     if (imuChart.data.labels.length > 50) {
                         imuChart.data.labels.shift();
-                        imuChart.data.datasets[0].data.shift();
-                        imuChart.data.datasets[1].data.shift();
-                        imuChart.data.datasets[2].data.shift();
+                        imuChart.data.datasets.forEach(dataset => dataset.data.shift());
                     }
                     imuChart.update();
                 }
             }
-        }
-    } catch (error) {
-        console.error("Error connecting to serial port:", error);
-        statusText.innerText = "Error: Could not connect to serial port.";
-        statusText.style.color = "#ff5252";
-    }
-}
-
-connectBtn.addEventListener('click', connectSerial);
