@@ -4,163 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gesture Engine | Auth</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
     <style>
-        /* --- Color Palette & Variables --- */
-        :root {
-            --bg-base: #000000;
-            --bg-elevated: #121212;
-            --bg-card: #181818;
-            --bg-hover: #282828;
-            --text-primary: #FFFFFF;
-            --text-secondary: #B3B3B3;
-            --accent-green: #1DB954; /* Spotify Green */
-            --accent-red: #E22134;
-            --accent-purple: #BB86FC;
-            --font-ui: 'Inter', sans-serif;
-            --font-code: 'JetBrains Mono', monospace;
-        }
-
-        /* --- Global Reset & Typography --- */
+        :root { --bg-base: #000000; --bg-elevated: #121212; --bg-card: #181818; --bg-hover: #282828; --text-primary: #FFFFFF; --text-secondary: #B3B3B3; --font-ui: 'Inter', sans-serif; --font-code: 'JetBrains Mono', monospace; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: var(--font-ui); background-color: var(--bg-base); color: var(--text-primary); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 2rem 1rem; }
+        .header { text-align: center; margin-bottom: 1.5rem; }
+        h1 { font-weight: 800; font-size: 2.5rem; margin-bottom: 4px; }
+        .subtitle { color: var(--text-secondary); font-family: var(--font-code); font-size: 0.9rem; letter-spacing: 2px; }
+        .controls { display: flex; gap: 16px; margin-bottom: 1.5rem; flex-wrap: wrap; justify-content: center; }
+        button { font-family: var(--font-code); font-weight: 700; font-size: 0.85rem; background-color: var(--text-primary); color: var(--bg-base); border: none; border-radius: 50px; padding: 12px 28px; cursor: pointer; text-transform: uppercase; transition: all 0.2s ease; }
+        button:hover:not(:disabled) { transform: scale(1.04); background-color: #f0f0f0; }
+        button:disabled { background-color: var(--bg-hover); color: #555; cursor: not-allowed; }
+        #connectBtn { background-color: transparent; color: var(--text-primary); border: 1px solid var(--text-secondary); }
+        #statusText { margin-bottom: 1.5rem; font-family: var(--font-code); font-size: 1.1rem; text-align: center; min-height: 24px; }
         
-        body {
-            font-family: var(--font-ui);
-            background-color: var(--bg-base);
-            color: var(--text-primary);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 3rem 1rem;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* --- Header Section --- */
-        .header { text-align: center; margin-bottom: 2.5rem; }
-        
-        h1 {
-            font-weight: 800;
-            font-size: 2.5rem;
-            letter-spacing: -1px;
-            margin-bottom: 8px;
-        }
-        
-        .subtitle {
-            color: var(--text-secondary);
-            font-family: var(--font-code);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-
-        /* --- Controls & Buttons --- */
-        .controls {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        button {
-            font-family: var(--font-code);
-            font-weight: 700;
-            font-size: 0.85rem;
-            background-color: var(--text-primary);
-            color: var(--bg-base);
-            border: none;
-            border-radius: 500px; /* Sleek Pill Shape */
-            padding: 14px 32px;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: all 0.2s ease;
-        }
-
-        button:hover:not(:disabled) {
-            transform: scale(1.04);
-            background-color: #f0f0f0;
-        }
-
-        button:active:not(:disabled) { transform: scale(0.98); }
-
-        button:disabled {
-            background-color: var(--bg-hover);
-            color: #555;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        #connectBtn {
-            background-color: transparent;
-            color: var(--text-primary);
-            border: 1px solid var(--text-secondary);
-        }
-        #connectBtn:hover {
-            border-color: var(--text-primary);
-            background-color: transparent;
-        }
-
-        /* --- Environment Dashboard (Sleek Pills) --- */
-        .env-dashboard {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .status-pill {
-            background-color: var(--bg-card);
-            padding: 12px 20px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 0.9rem;
-            transition: background-color 0.3s;
-        }
-
-        .status-pill:hover { background-color: var(--bg-hover); }
-
-        .status-label { color: var(--text-secondary); font-weight: 600; }
-        
-        .status-value {
-            font-family: var(--font-code);
-            color: var(--text-primary);
-            font-weight: 700;
-        }
-
-        /* --- Status Text Output --- */
-        #statusText {
-            margin-bottom: 2rem;
-            font-family: var(--font-code);
-            font-size: 1.1rem;
-            text-align: center;
-            min-height: 24px;
-        }
-
-        /* --- Chart Container --- */
-        .chart-container {
-            width: 100%;
-            max-width: 1000px;
-            background-color: var(--bg-elevated);
-            padding: 24px;
-            border-radius: 12px;
-            /* Subtle inner shadow for depth */
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.5);
-        }
+        #three-container { width: 100%; max-width: 1200px; height: 350px; background-color: var(--bg-elevated); border-radius: 12px; margin-bottom: 24px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; }
+        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; width: 100%; max-width: 1200px; }
+        .chart-card { background-color: var(--bg-elevated); padding: 16px; border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; }
+        .chart-title { font-family: var(--font-code); color: var(--text-secondary); margin-bottom: 8px; font-size: 0.8rem; letter-spacing: 1px; }
+        canvas { width: 100% !important; height: 150px !important; }
     </style>
 </head>
 <body>
 
     <div class="header">
         <h1>Auth Engine</h1>
-        <div class="subtitle">Spatio-Temporal Fusion // 16-DOF</div>
+        <div class="subtitle">Spatio-Temporal Fusion // 12-DOF 3D Tracking</div>
     </div>
 
     <div class="controls">
@@ -169,29 +42,15 @@
         <button id="testGestureBtn" disabled>Test Access</button>
     </div>
 
-    <div class="env-dashboard">
-        <div class="status-pill">
-            <span class="status-label">ZONE 1</span>
-            <span class="status-value" id="us1Label">---</span>
-        </div>
-        <div class="status-pill">
-            <span class="status-label">ZONE 2</span>
-            <span class="status-value" id="us2Label">---</span>
-        </div>
-        <div class="status-pill">
-            <span class="status-label">IR L</span>
-            <span class="status-value" id="ir1Label">---</span>
-        </div>
-        <div class="status-pill">
-            <span class="status-label">IR R</span>
-            <span class="status-value" id="ir2Label">---</span>
-        </div>
-    </div>
-
     <div id="statusText" style="color: var(--text-secondary);">AWAITING CONNECTION...</div>
 
-    <div class="chart-container">
-        <canvas id="imuChart"></canvas>
+    <div id="three-container"></div>
+
+    <div class="charts-grid">
+        <div class="chart-card"><div class="chart-title">HAND (BASE)</div><canvas id="handChart"></canvas></div>
+        <div class="chart-card"><div class="chart-title">INDEX FINGER</div><canvas id="indexChart"></canvas></div>
+        <div class="chart-card"><div class="chart-title">MIDDLE FINGER</div><canvas id="middleChart"></canvas></div>
+        <div class="chart-card"><div class="chart-title">THUMB</div><canvas id="thumbChart"></canvas></div>
     </div>
 
     <script src="script.js"></script>
