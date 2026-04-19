@@ -6,7 +6,7 @@ A 100% serverless, edge-based IoT project that captures and visualizes real-time
 **Location:** Built at IIIT Hyderabad (Room N125)
 
 ## 🚀 How It Works
-Traditional passwords rely on static text. This engine explores the concept of a "dynamic password"—a physical movement in 3D space performed with a specific, unique rhythm over time. 
+Traditional passwords rely on static text. This engine explores the concept of a "dynamic password"-a physical movement in 3D space performed with a specific, unique rhythm over time. 
 
 The system uses an ESP32 edge node to capture high-fidelity acceleration data and streams it directly to a local web browser using the **Web Serial API**. The browser runs a 5-second sampling window and processes the mathematical similarity between gestures using DTW. No database, no cloud server, and no backend hosting required.
 
