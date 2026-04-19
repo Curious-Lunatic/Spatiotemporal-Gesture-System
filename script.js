@@ -22,9 +22,8 @@ function createBone(colorHex, length) {
     const nodeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
     const node = new THREE.Mesh(nodeGeo, nodeMat);
     
-    // 2. The Vector Line (Cylinder instead of 1px Line for actual thickness)
+    // 2. The Vector Line
     const boneGeo = new THREE.CylinderGeometry(0.08, 0.02, length, 8);
-    // Shift geometry so the top is at the origin (pivot point), then point it along -Z
     boneGeo.translate(0, -length / 2, 0);
     boneGeo.rotateX(-Math.PI / 2);
     
@@ -59,8 +58,7 @@ palmFrame.add(middleJoint);
 const thumbJoint = createBone(0x448aff, 2.5); // Blue
 thumbJoint.position.set(-1.6, 0, 0);
 thumbJoint.rotation.y = -Math.PI / 4; 
-// CRITICAL FIX: Change rotation order so Pitch/Roll apply cleanly after the Y base angle
-thumbJoint.rotation.order = "YXZ"; 
+thumbJoint.rotation.order = "YXZ"; // CRITICAL FIX
 palmFrame.add(thumbJoint);
 
 window.addEventListener('resize', () => {
@@ -82,7 +80,16 @@ function createChart(canvasId) {
             { borderColor: '#4caf50', data: [], tension: 0.2, pointRadius: 0, borderWidth: 2 },
             { borderColor: '#448aff', data: [], tension: 0.2, pointRadius: 0, borderWidth: 2 }
         ]},
-        options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { suggestedMin: -15, suggestedMax: 15, grid: { color: '#282828' }, ticks: { color: '#555' } }, x: { display: false } }, plugins: { legend: { display: false } } }
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            animation: false, 
+            scales: { 
+                y: { suggestedMin: -15, suggestedMax: 15, grid: { color: '#282828' }, ticks: { color: '#555' } }, 
+                x: { display: false } 
+            }, 
+            plugins: { legend: { display: false } } 
+        }
     });
 }
 
@@ -106,10 +113,12 @@ const connectBtn = document.getElementById('connectBtn');
 recordBtn.addEventListener('click', () => {
     savedTemplate = []; isRecordingTemplate = true;
     recordBtn.disabled = true; testBtn.disabled = true;
-    statusText.innerText = "RECORDING GLOVE PASSWORD... (5 sec)"; statusText.style.color = "#ff5252";
+    statusText.innerText = "RECORDING GLOVE PASSWORD... (5 sec)"; 
+    statusText.style.color = "#ff5252";
     setTimeout(() => {
         isRecordingTemplate = false; recordBtn.disabled = false; testBtn.disabled = false;
-        statusText.innerText = `Password Saved! (${savedTemplate.length} points)`; statusText.style.color = "#4caf50";
+        statusText.innerText = `Password Saved! (${savedTemplate.length} points)`; 
+        statusText.style.color = "#4caf50";
     }, 5000); 
 });
 
@@ -117,15 +126,20 @@ testBtn.addEventListener('click', () => {
     if (savedTemplate.length === 0) return alert("Record a password first!");
     currentTest = []; isTesting = true;
     recordBtn.disabled = true; testBtn.disabled = true;
-    statusText.innerText = "TESTING LOGIN... Do the gesture!"; statusText.style.color = "#ffb74d";
+    statusText.innerText = "TESTING LOGIN... Do the gesture!"; 
+    statusText.style.color = "#ffb74d";
     
     setTimeout(() => {
         isTesting = false; recordBtn.disabled = false; testBtn.disabled = false;
         const dtwScore = calculateMultiDTW(savedTemplate, currentTest);
-        if (dtwScore < 8.0) { 
-            statusText.innerText = `✅ AUTHENTICATED! (Score: ${dtwScore.toFixed(2)})`; statusText.style.color = "#4caf50";
+        
+        // --- NEW THRESHOLD TRIGGER ---
+        if (dtwScore < 30.0) { 
+            statusText.innerText = `✅ AUTHENTICATED! (Score: ${dtwScore.toFixed(2)})`; 
+            statusText.style.color = "#4caf50";
         } else {
-            statusText.innerText = `❌ ACCESS DENIED (Score: ${dtwScore.toFixed(2)})`; statusText.style.color = "#ff5252";
+            statusText.innerText = `❌ ACCESS DENIED (Score: ${dtwScore.toFixed(2)})`; 
+            statusText.style.color = "#ff5252";
         }
     }, 5000); 
 });
@@ -152,20 +166,32 @@ function calculateMultiDTW(template, liveGesture) {
 
 
 // ==========================================
-// 4. WEB SERIAL & 3D RELATIVE MATH
+// 4. BULLETPROOF WEB SERIAL & 3D MATH
 // ==========================================
 let port, reader, timeCount = 0;
+
+// Auto-Calibration Memory
+let isCalibrated = false;
+let offsetPitch = [0, 0, 0, 0];
+let offsetRoll = [0, 0, 0, 0];
 
 function calcPitch(y, z) { return Math.atan2(y, z); }
 function calcRoll(x, y, z) { return Math.atan2(-x, Math.sqrt(y * y + z * z)); }
 
 async function connectSerial() {
+    if (port) {
+        alert("Port is already open. Refresh the page to reset.");
+        return;
+    }
+
     try {
         port = await navigator.serial.requestPort();
         await port.open({ baudRate: 115200 });
         
         connectBtn.innerText = "Connected!"; connectBtn.style.backgroundColor = "#4caf50";
-        recordBtn.disabled = false; statusText.innerText = "Ready to Record."; statusText.style.color = "#bb86fc";
+        recordBtn.disabled = false; testBtn.disabled = false;
+        statusText.innerText = "Keep hand flat. Waiting for valid data to calibrate..."; 
+        statusText.style.color = "#bb86fc";
 
         const textDecoder = new TextDecoderStream();
         port.readable.pipeTo(textDecoder.writable);
@@ -178,54 +204,80 @@ async function connectSerial() {
             
             buffer += value;
             let lines = buffer.split(/\r?\n/);
-            buffer = lines.pop(); 
+            buffer = lines.pop(); // Save incomplete chunk
 
             for (let line of lines) {
                 line = line.trim();
-                if (line) {
-                    const vals = line.split(',').map(Number);
-                    if (vals.length !== 12 || vals.includes(NaN)) continue; 
-                    
-                    if (isRecordingTemplate) savedTemplate.push(vals);
-                    if (isTesting) currentTest.push(vals);
+                
+                // FILTER GARBAGE
+                if (!line || /[a-zA-Z]/.test(line)) continue; 
 
-                    const palmPitch = calcPitch(vals[1], vals[2]);
-                    const palmRoll = calcRoll(vals[0], vals[1], vals[2]);
-                    
-                    palmFrame.rotation.x = palmPitch;
-                    palmFrame.rotation.z = palmRoll;
+                const vals = line.split(',').map(Number);
+                
+                // DATA INTEGRITY CHECK
+                if (vals.length !== 12 || vals.some(isNaN)) continue; 
+                
+                // AUTHENTICATION LOGIC
+                if (isRecordingTemplate) savedTemplate.push(vals);
+                if (isTesting) currentTest.push(vals);
 
-                    indexJoint.rotation.x = calcPitch(vals[4], vals[5]) - palmPitch;
-                    indexJoint.rotation.z = calcRoll(vals[3], vals[4], vals[5]) - palmRoll;
-                    
-                    middleJoint.rotation.x = calcPitch(vals[7], vals[8]) - palmPitch;
-                    middleJoint.rotation.z = calcRoll(vals[6], vals[7], vals[8]) - palmRoll;
+                // ABSOLUTE ANGLES
+                const p0 = calcPitch(vals[1], vals[2]); const r0 = calcRoll(vals[0], vals[1], vals[2]); // Hand
+                const p1 = calcPitch(vals[4], vals[5]); const r1 = calcRoll(vals[3], vals[4], vals[5]); // Index
+                const p2 = calcPitch(vals[7], vals[8]); const r2 = calcRoll(vals[6], vals[7], vals[8]); // Middle
+                const p3 = calcPitch(vals[10], vals[11]); const r3 = calcRoll(vals[9], vals[10], vals[11]); // Thumb
 
-                    // With the "YXZ" order fixed above, this math will now act like a natural hinge
-                    thumbJoint.rotation.x = calcPitch(vals[10], vals[11]) - palmPitch;
-                    thumbJoint.rotation.z = calcRoll(vals[9], vals[10], vals[11]) - palmRoll;
-                    
-                    renderer.render(scene, camera);
-
-                    [handChart, indexChart, middleChart, thumbChart].forEach((chart, idx) => {
-                        const offset = idx * 3;
-                        chart.data.labels.push(timeCount);
-                        chart.data.datasets[0].data.push(vals[offset]);
-                        chart.data.datasets[1].data.push(vals[offset+1]);
-                        chart.data.datasets[2].data.push(vals[offset+2]);
-                        
-                        if (chart.data.labels.length > 50) {
-                            chart.data.labels.shift();
-                            chart.data.datasets.forEach(d => d.data.shift());
-                        }
-                        chart.update();
-                    });
-                    timeCount++;
+                // AUTO-CALIBRATION TRIGGER
+                if (!isCalibrated) {
+                    offsetPitch = [p0, p1, p2, p3];
+                    offsetRoll = [r0, r1, r2, r3];
+                    isCalibrated = true;
+                    statusText.innerText = "✅ Calibrated! Ready to Record.";
                 }
+
+                // APPLY CALIBRATION OFFSETS
+                const calibHandP = p0 - offsetPitch[0];     const calibHandR = r0 - offsetRoll[0];
+                const calibIndexP = p1 - offsetPitch[1];    const calibIndexR = r1 - offsetRoll[1];
+                const calibMiddleP = p2 - offsetPitch[2];   const calibMiddleR = r2 - offsetRoll[2];
+                const calibThumbP = p3 - offsetPitch[3];    const calibThumbR = r3 - offsetRoll[3];
+
+                // UPDATE 3D BASE
+                palmFrame.rotation.x = calibHandP;
+                palmFrame.rotation.z = calibHandR;
+
+                // UPDATE 3D FINGERS (Relative to Hand Base)
+                indexJoint.rotation.x = calibIndexP - calibHandP;
+                indexJoint.rotation.z = calibIndexR - calibHandR;
+                
+                middleJoint.rotation.x = calibMiddleP - calibHandP;
+                middleJoint.rotation.z = calibMiddleR - calibHandR;
+
+                thumbJoint.rotation.x = calibThumbP - calibHandP;
+                thumbJoint.rotation.z = calibThumbR - calibHandR;
+                
+                renderer.render(scene, camera);
+
+                // UPDATE 2D CHARTS
+                [handChart, indexChart, middleChart, thumbChart].forEach((chart, idx) => {
+                    const offset = idx * 3;
+                    chart.data.labels.push(timeCount);
+                    chart.data.datasets[0].data.push(vals[offset]);
+                    chart.data.datasets[1].data.push(vals[offset+1]);
+                    chart.data.datasets[2].data.push(vals[offset+2]);
+                    
+                    if (chart.data.labels.length > 50) {
+                        chart.data.labels.shift();
+                        chart.data.datasets.forEach(d => d.data.shift());
+                    }
+                    chart.update();
+                });
+                timeCount++;
             }
         }
     } catch (error) {
-        statusText.innerText = "Error: Could not connect to serial port."; statusText.style.color = "#ff5252";
+        console.error(error);
+        statusText.innerText = "Error: Port Locked or Browser Denied Access."; 
+        statusText.style.color = "#ff5252";
     }
 }
 
