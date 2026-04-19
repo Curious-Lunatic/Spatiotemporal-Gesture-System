@@ -1,58 +1,642 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gesture Engine | Auth</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    
-    <style>
-        :root { --bg-base: #000000; --bg-elevated: #121212; --bg-card: #181818; --bg-hover: #282828; --text-primary: #FFFFFF; --text-secondary: #B3B3B3; --font-ui: 'Inter', sans-serif; --font-code: 'JetBrains Mono', monospace; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: var(--font-ui); background-color: var(--bg-base); color: var(--text-primary); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 2rem 1rem; }
-        .header { text-align: center; margin-bottom: 1.5rem; }
-        h1 { font-weight: 800; font-size: 2.5rem; margin-bottom: 4px; }
-        .subtitle { color: var(--text-secondary); font-family: var(--font-code); font-size: 0.9rem; letter-spacing: 2px; }
-        .controls { display: flex; gap: 16px; margin-bottom: 1.5rem; flex-wrap: wrap; justify-content: center; }
-        button { font-family: var(--font-code); font-weight: 700; font-size: 0.85rem; background-color: var(--text-primary); color: var(--bg-base); border: none; border-radius: 50px; padding: 12px 28px; cursor: pointer; text-transform: uppercase; transition: all 0.2s ease; }
-        button:hover:not(:disabled) { transform: scale(1.04); background-color: #f0f0f0; }
-        button:disabled { background-color: var(--bg-hover); color: #555; cursor: not-allowed; }
-        #connectBtn { background-color: transparent; color: var(--text-primary); border: 1px solid var(--text-secondary); }
-        #statusText { margin-bottom: 1.5rem; font-family: var(--font-code); font-size: 1.1rem; text-align: center; min-height: 24px; }
-        
-        #three-container { width: 100%; max-width: 1200px; height: 350px; background-color: var(--bg-elevated); border-radius: 12px; margin-bottom: 24px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; }
-        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; width: 100%; max-width: 1200px; }
-        .chart-card { background-color: var(--bg-elevated); padding: 16px; border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; }
-        .chart-title { font-family: var(--font-code); color: var(--text-secondary); margin-bottom: 8px; font-size: 0.8rem; letter-spacing: 1px; }
-        canvas { width: 100% !important; height: 150px !important; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GestureAuth — Spatio-Temporal Engine</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne+Mono&family=Syne:wght@400;600;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    /* ── RESET & ROOT ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080a0c;
+      --bg1:       #0e1114;
+      --bg2:       #141719;
+      --bg3:       #1c2025;
+      --line:      #232830;
+      --line2:     #2e3540;
+      --text:      #e8eaed;
+      --muted:     #5a6475;
+      --dim:       #323d4a;
+      --accent:    #c8f0d8;
+      --accent2:   #7be0a8;
+      --red:       #f47575;
+      --amber:     #f0c060;
+      --blue:      #6eb8f7;
+      --mono:      'Syne Mono', monospace;
+      --display:   'Syne', sans-serif;
+      --body:      'DM Sans', sans-serif;
+      --r:         6px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--body);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE TEXTURE OVERLAY ─────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+      opacity: 0.022;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 24px 40px;
+      border-bottom: 1px solid var(--line);
+      position: relative;
+    }
+
+    .logo-block {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+
+    .logo-mark {
+      width: 28px; height: 28px;
+      border: 1.5px solid var(--accent2);
+      border-radius: 3px;
+      position: relative;
+      flex-shrink: 0;
+      top: 1px;
+    }
+    .logo-mark::after {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      background: var(--accent2);
+      border-radius: 1px;
+      opacity: 0.6;
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 1.05rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .header-center {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .header-right {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.4s;
+    }
+    .status-dot.live { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: pulse-dot 2s ease infinite; }
+    .status-dot.error { background: var(--red); }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-label {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* ── MAIN LAYOUT ─────────────────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 0;
+      height: calc(100vh - 73px - 48px);
+    }
+
+    /* ── SIDEBAR ─────────────────────────────────────────────── */
+    aside {
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      border-bottom: 1px solid var(--line);
+      padding: 24px 28px;
+    }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    /* ── CONTROL BUTTONS ─────────────────────────────────────── */
+    .btn-group { display: flex; flex-direction: column; gap: 8px; }
+
+    .btn {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 12px 18px;
+      border-radius: var(--r);
+      border: 1px solid var(--line2);
+      background: var(--bg2);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent2);
+      opacity: 0;
+      transition: opacity 0.18s;
+    }
+
+    .btn:hover:not(:disabled)::before { opacity: 0.06; }
+    .btn:hover:not(:disabled) { border-color: var(--dim); transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+
+    .btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .btn-icon {
+      width: 16px; height: 16px;
+      border-radius: 2px;
+      border: 1px solid currentColor;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .btn.primary {
+      background: var(--bg3);
+      border-color: var(--accent2);
+      color: var(--accent);
+    }
+    .btn.primary::before { background: var(--accent2); }
+
+    .btn.recording {
+      border-color: var(--red);
+      color: var(--red);
+      animation: border-pulse 1s ease infinite;
+    }
+    @keyframes border-pulse {
+      0%, 100% { border-color: var(--red); }
+      50% { border-color: transparent; }
+    }
+
+    .btn.connect-btn {
+      background: transparent;
+      border-color: var(--line2);
+      color: var(--muted);
+    }
+    .btn.connect-btn.connected {
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+
+    /* ── STATUS PANEL ───────────────────────────────────────── */
+    .status-panel {
+      background: var(--bg1);
+      border-radius: var(--r);
+      padding: 16px;
+      border: 1px solid var(--line);
+    }
+
+    #statusText {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      line-height: 1.6;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      min-height: 42px;
+      transition: color 0.3s;
+    }
+    #statusText.ok  { color: var(--accent2); }
+    #statusText.err { color: var(--red); }
+    #statusText.warn { color: var(--amber); }
+    #statusText.info { color: var(--blue); }
+
+    /* ── SCORE DISPLAY ──────────────────────────────────────── */
+    .score-display {
+      text-align: center;
+    }
+    .score-value {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 3.2rem;
+      line-height: 1;
+      color: var(--dim);
+      letter-spacing: -0.02em;
+      transition: color 0.5s;
+    }
+    .score-value.ok  { color: var(--accent2); }
+    .score-value.err { color: var(--red); }
+    .score-label {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+
+    /* ── TEMPLATE STAT ──────────────────────────────────────── */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 6px 0;
+    }
+    .stat-key {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .stat-val {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--text);
+      letter-spacing: 0.06em;
+    }
+
+    /* ── 3D VIEWPORT ─────────────────────────────────────────── */
+    .viewport-area {
+      grid-column: 2;
+      grid-row: 1;
+      border-bottom: 1px solid var(--line);
+      position: relative;
+      overflow: hidden;
+    }
+
+    #three-container {
+      width: 100%;
+      height: 100%;
+      min-height: 300px;
+    }
+
+    .viewport-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 16px 20px;
+      pointer-events: none;
+    }
+
+    .viewport-tag {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      text-transform: uppercase;
+      background: rgba(8,10,12,0.7);
+      padding: 4px 8px;
+      border-radius: 3px;
+      border: 1px solid var(--line);
+      backdrop-filter: blur(4px);
+    }
+
+    /* ── CHARTS AREA ─────────────────────────────────────────── */
+    .charts-area {
+      grid-column: 2;
+      grid-row: 2;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      overflow: hidden;
+    }
+
+    .chart-card {
+      border-left: 1px solid var(--line);
+      padding: 16px 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-card:first-child { border-left: none; }
+
+    .chart-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--line2), transparent);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chart-name {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .chart-axes {
+      display: flex;
+      gap: 6px;
+    }
+
+    .axis-badge {
+      font-family: var(--mono);
+      font-size: 0.55rem;
+      padding: 1px 5px;
+      border-radius: 2px;
+      letter-spacing: 0.08em;
+    }
+    .axis-x { background: rgba(244,117,117,0.12); color: var(--red); border: 1px solid rgba(244,117,117,0.2); }
+    .axis-y { background: rgba(110,184,247,0.12); color: var(--blue); border: 1px solid rgba(110,184,247,0.2); }
+    .axis-z { background: rgba(200,240,216,0.12); color: var(--accent2); border: 1px solid rgba(200,240,216,0.2); }
+
+    .chart-canvas-wrap { flex: 1; position: relative; min-height: 80px; }
+    .chart-canvas-wrap canvas { width: 100% !important; height: 100% !important; }
+
+    /* ── FOOTER ─────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 12px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-info {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* ── RECORDING PROGRESS BAR ──────────────────────────────── */
+    .progress-wrap {
+      width: 100%;
+      height: 2px;
+      background: var(--line);
+      border-radius: 1px;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .progress-wrap.visible { opacity: 1; }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--accent2);
+      width: 0%;
+      transition: width 0.1s linear;
+      border-radius: 1px;
+    }
+    .progress-bar.err { background: var(--red); }
+
+    /* ── SCAN LINES on 3D view ──────────────────────────────── */
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0,0,0,0.04) 3px,
+        rgba(0,0,0,0.04) 4px
+      );
+    }
+
+    /* ── RESULT FLASH ───────────────────────────────────────── */
+    @keyframes flash-in {
+      from { opacity: 0; transform: scale(0.95); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    .result-flash {
+      animation: flash-in 0.3s ease forwards;
+    }
+
+    /* ── SCROLLBAR ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 2px; }
+  </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>Auth Engine</h1>
-        <div class="subtitle">Spatio-Temporal Fusion // 12-DOF 3D Tracking</div>
+  <!-- HEADER -->
+  <header>
+    <div class="logo-block">
+      <div class="logo-mark"></div>
+      <h1>GestureAuth</h1>
+    </div>
+    <div class="header-center">Spatio-Temporal Fusion &nbsp;/&nbsp; 12-DOF 3D Tracking</div>
+    <div class="header-right">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-label" id="statusLabel">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+
+    <!-- SIDEBAR -->
+    <aside>
+      <!-- Connect -->
+      <div class="sidebar-section">
+        <div class="section-label">Connection</div>
+        <div class="btn-group">
+          <button class="btn connect-btn" id="connectBtn">
+            <span class="btn-icon"></span>
+            Connect Device
+          </button>
+        </div>
+      </div>
+
+      <!-- Auth Controls -->
+      <div class="sidebar-section">
+        <div class="section-label">Auth Controls</div>
+        <div class="btn-group">
+          <button class="btn primary" id="recordTemplateBtn" disabled>
+            <span class="btn-icon"></span>
+            Record Pattern
+          </button>
+          <button class="btn" id="testGestureBtn" disabled>
+            <span class="btn-icon"></span>
+            Test Access
+          </button>
+        </div>
+
+        <!-- Progress bar -->
+        <div style="margin-top: 14px;">
+          <div class="progress-wrap" id="progressWrap">
+            <div class="progress-bar" id="progressBar"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="sidebar-section">
+        <div class="section-label">System Status</div>
+        <div class="status-panel">
+          <div id="statusText">Awaiting connection...</div>
+        </div>
+      </div>
+
+      <!-- DTW Score -->
+      <div class="sidebar-section">
+        <div class="section-label">DTW Score</div>
+        <div class="score-display">
+          <div class="score-value" id="scoreValue">—</div>
+          <div class="score-label">Threshold &lt; 8.00</div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="sidebar-section" style="flex: 1;">
+        <div class="section-label">Session Data</div>
+        <div class="stat-row">
+          <span class="stat-key">Template pts</span>
+          <span class="stat-val" id="templatePts">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">Test pts</span>
+          <span class="stat-val" id="testPts">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">Sample rate</span>
+          <span class="stat-val">20 Hz</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">Dimensions</span>
+          <span class="stat-val">12-DOF</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">Sensors</span>
+          <span class="stat-val">4x MPU6050</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 3D VIEWPORT -->
+    <div class="viewport-area">
+      <div id="three-container"></div>
+      <div class="scanlines"></div>
+      <div class="viewport-overlay">
+        <span class="viewport-tag">3D Skeletal View</span>
+        <span class="viewport-tag" id="viewportState">IDLE</span>
+      </div>
     </div>
 
-    <div class="controls">
-        <button id="connectBtn">Connect Device</button>
-        <button id="recordTemplateBtn" disabled>Record Pattern</button>
-        <button id="testGestureBtn" disabled>Test Access</button>
+    <!-- CHARTS -->
+    <div class="charts-area">
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-name">Palm / Base</span>
+          <div class="chart-axes">
+            <span class="axis-badge axis-x">X</span>
+            <span class="axis-badge axis-y">Y</span>
+            <span class="axis-badge axis-z">Z</span>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="handChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-name">Index Finger</span>
+          <div class="chart-axes">
+            <span class="axis-badge axis-x">X</span>
+            <span class="axis-badge axis-y">Y</span>
+            <span class="axis-badge axis-z">Z</span>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="indexChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-name">Middle Finger</span>
+          <div class="chart-axes">
+            <span class="axis-badge axis-x">X</span>
+            <span class="axis-badge axis-y">Y</span>
+            <span class="axis-badge axis-z">Z</span>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="middleChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-name">Thumb</span>
+          <div class="chart-axes">
+            <span class="axis-badge axis-x">X</span>
+            <span class="axis-badge axis-y">Y</span>
+            <span class="axis-badge axis-z">Z</span>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="thumbChart"></canvas></div>
+      </div>
     </div>
 
-    <div id="statusText" style="color: var(--text-secondary);">AWAITING CONNECTION...</div>
+  </main>
 
-    <div id="three-container"></div>
+  <!-- FOOTER -->
+  <footer>
+    <span class="footer-info">Spatio-Gestural Auth Engine &nbsp;/&nbsp; DTW-12D</span>
+    <span class="footer-info" id="footerTime">—</span>
+    <span class="footer-info">Baud: 115200</span>
+  </footer>
 
-    <div class="charts-grid">
-        <div class="chart-card"><div class="chart-title">HAND (BASE)</div><canvas id="handChart"></canvas></div>
-        <div class="chart-card"><div class="chart-title">INDEX FINGER</div><canvas id="indexChart"></canvas></div>
-        <div class="chart-card"><div class="chart-title">MIDDLE FINGER</div><canvas id="middleChart"></canvas></div>
-        <div class="chart-card"><div class="chart-title">THUMB</div><canvas id="thumbChart"></canvas></div>
-    </div>
-
-    <script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
