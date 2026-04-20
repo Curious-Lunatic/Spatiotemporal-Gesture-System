@@ -1,83 +1,98 @@
 #include "BluetoothSerial.h"
 
+// --- CONFIG ---
 BluetoothSerial SerialBT;
 
-#define TRIG_PIN 5
-#define ECHO_PIN 18
-#define IR1_PIN  22
-#define IR2_PIN  21
-#define DIST_THRESHOLD 8.0
+uint8_t gloveMAC[6] = {0xCC, 0xDB, 0xA7, 0x2E, 0x1B, 0x8A};
 
-bool lastState = false;
-bool btConnected = false;
+const int trigPin = 5; 
+const int echoPin = 18; 
 
-// Replace with your Glove ESP32's BT MAC address
-// Find it by printing ESP.getEfuseMac() on the Glove
-uint8_t gloveMAC[6] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}; // <-- CHANGE THIS
+int distanceThreshold = 15; 
+bool handInBox = false;
+bool connected = false;
+
+// NEW: Grace Period Variables
+unsigned long lastHandSeenTime = 0;
+const unsigned long EXIT_GRACE_PERIOD = 5000; // 5 seconds of forgiveness
+
+unsigned long lastPrintTime = 0;
+
+void runDiagnostics() {
+  Serial.println("\n=== RUNNING HARDWARE DIAGNOSTICS ===");
+  Serial.print("[TEST 1] HC-SR04 Ultrasonic... ");
+  digitalWrite(trigPin, LOW); delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH, 30000); 
+  if (duration == 0) Serial.println("❌ FAIL");
+  else Serial.println("✅ PASS");
+
+  Serial.print("[TEST 2] Bluetooth Radio... ");
+  if (!SerialBT.begin("BoxESP", true)) { Serial.println("❌ FAIL"); while(1); } 
+  else Serial.println("✅ PASS");
+  Serial.println("====================================\n");
+}
 
 void setup() {
   Serial.begin(115200);
+  while (!Serial) delay(10);
+  delay(1000); 
+  
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
 
-  SerialBT.begin("BoxESP", true); // true = Master mode
-  Serial.println("[BT] Box in Master mode. Connecting to GloveESP...");
+  runDiagnostics();
 
-  // Connect by MAC for reliability
-  btConnected = SerialBT.connect(gloveMAC);
-  if (btConnected) {
-    Serial.println("[BT] Connected to Glove!");
-  } else {
-    Serial.println("[BT] Connection failed. Will retry in loop.");
-  }
-
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
-  pinMode(IR1_PIN, INPUT);
-  pinMode(IR2_PIN, INPUT);
-}
-
-float getDistance() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  if (duration == 0) return 999.0; // timeout = no echo
-  return duration * 0.034 / 2.0;
-}
-
-void sendBT(const char* msg) {
-  if (!btConnected) {
-    btConnected = SerialBT.connect(gloveMAC); // attempt reconnect
-  }
-  if (btConnected) {
-    SerialBT.println(msg);
-    Serial.print("[BT] Sent: "); Serial.println(msg);
+  Serial.println("Attempting to pair with the Glove MAC Address...");
+  connected = SerialBT.connect(gloveMAC);
+  
+  if(connected) {
+    Serial.println("🟢 SECURE LINK ESTABLISHED!");
   }
 }
 
 void loop() {
-  float distance = getDistance();
-  bool currentState = false;
-
-  if (distance > 0 && distance <= DIST_THRESHOLD) {
-    int ir1 = digitalRead(IR1_PIN);
-    int ir2 = digitalRead(IR2_PIN);
-    if (ir1 == HIGH && ir2 == HIGH) {
-      currentState = true;
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n'); input.trim();
+    if (input.length() > 0 && input.toInt() > 0 && input.toInt() <= 400) {
+      distanceThreshold = input.toInt();
+      Serial.print("\n⚙️ [UPDATED] Distance Threshold is now: "); Serial.print(distanceThreshold); Serial.println(" cm\n");
     }
   }
 
-  if (currentState != lastState) {
-    if (currentState) {
-      Serial.println("[BOX] Hand DETECTED — sending HAND_PRESENT");
-      sendBT("HAND_PRESENT");
-    } else {
-      Serial.println("[BOX] Hand REMOVED — sending CLEAR");
-      sendBT("CLEAR");
-    }
-    lastState = currentState;
+  if (!connected) return; 
+
+  long duration; int distance;
+  digitalWrite(trigPin, LOW); delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH, 30000); 
+  distance = (duration == 0) ? 999 : duration * 0.034 / 2; 
+
+  if (millis() - lastPrintTime > 500) {
+    Serial.print("📡 Live Distance: "); Serial.print(distance); Serial.println(" cm");
+    lastPrintTime = millis();
   }
 
-  delay(100);
+  // --- UPGRADED STATE MACHINE (WITH GRACE PERIOD) ---
+  if (distance > 0 && distance < distanceThreshold) {
+    // Hand is visible! Reset the timer continuously.
+    lastHandSeenTime = millis(); 
+    
+    if (!handInBox) {
+      handInBox = true;
+      Serial.println("\n[BOX] Hand detected! Sending: HAND_PRESENT\n");
+      SerialBT.println("HAND_PRESENT");
+    }
+  } else {
+    // Hand is NOT visible. Has it been gone longer than 5 seconds?
+    if (handInBox && (millis() - lastHandSeenTime > EXIT_GRACE_PERIOD)) {
+      handInBox = false;
+      Serial.println("\n[BOX] Hand officially left (5s timeout). Sending: CLEAR\n");
+      SerialBT.println("CLEAR");
+    }
+  }
+
+  delay(100); 
 }

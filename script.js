@@ -100,98 +100,53 @@ const thumbChart = createChart('thumbChart');
 
 
 // ==========================================
-// 3. AUTH LOGIC & 12-D DTW ENGINE
+// 3 & 4. AUTOMATED AUTH LOGIC & WEB SERIAL
 // ==========================================
 let savedTemplate = [], currentTest = [];
 let isRecordingTemplate = false, isTesting = false;
 
 const statusText = document.getElementById('statusText');
-const recordBtn = document.getElementById('recordTemplateBtn');
-const testBtn = document.getElementById('testGestureBtn');
 const connectBtn = document.getElementById('connectBtn');
+const scoreValue = document.getElementById('scoreValue');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
 
-recordBtn.addEventListener('click', () => {
-    savedTemplate = []; isRecordingTemplate = true;
-    recordBtn.disabled = true; testBtn.disabled = true;
-    statusText.innerText = "RECORDING GLOVE PASSWORD... (5 sec)"; 
-    statusText.style.color = "#ff5252";
-    setTimeout(() => {
-        isRecordingTemplate = false; recordBtn.disabled = false; testBtn.disabled = false;
-        statusText.innerText = `Password Saved! (${savedTemplate.length} points)`; 
-        statusText.style.color = "#4caf50";
-    }, 5000); 
+// Remove manual button dependencies, keep them for reset purposes if needed
+document.getElementById('recordTemplateBtn').addEventListener('click', () => {
+    savedTemplate = [];
+    statusText.innerText = "Template cleared. Place hand to record new template.";
+    scoreValue.innerText = "—";
 });
 
-testBtn.addEventListener('click', () => {
-    if (savedTemplate.length === 0) return alert("Record a password first!");
-    currentTest = []; isTesting = true;
-    recordBtn.disabled = true; testBtn.disabled = true;
-    statusText.innerText = "TESTING LOGIN... Do the gesture!"; 
-    statusText.style.color = "#ffb74d";
-    
+function startProgressBar() {
+    progressWrap.classList.add('visible');
+    progressBar.style.transition = 'none';
+    progressBar.style.width = '0%';
     setTimeout(() => {
-        isTesting = false; recordBtn.disabled = false; testBtn.disabled = false;
-        const dtwScore = calculateMultiDTW(savedTemplate, currentTest);
-        
-        // --- NEW THRESHOLD TRIGGER ---
-        if (dtwScore < 30.0) { 
-            statusText.innerText = `✅ AUTHENTICATED! (Score: ${dtwScore.toFixed(2)})`; 
-            statusText.style.color = "#4caf50";
-        } else {
-            statusText.innerText = `❌ ACCESS DENIED (Score: ${dtwScore.toFixed(2)})`; 
-            statusText.style.color = "#ff5252";
-        }
-    }, 5000); 
-});
-
-function calculateMultiDTW(template, liveGesture) {
-    const n = template.length, m = liveGesture.length;
-    if (n === 0 || m === 0) return Infinity;
-    const dtw = Array.from({ length: n + 1 }, () => Array(m + 1).fill(Infinity));
-    dtw[0][0] = 0;
-    for (let i = 1; i <= n; i++) {
-        for (let j = 1; j <= m; j++) {
-            const t = template[i-1], l = liveGesture[j-1];
-            const cost = Math.sqrt(
-                Math.pow(t[0]-l[0],2) + Math.pow(t[1]-l[1],2) + Math.pow(t[2]-l[2],2) +
-                Math.pow(t[3]-l[3],2) + Math.pow(t[4]-l[4],2) + Math.pow(t[5]-l[5],2) +
-                Math.pow(t[6]-l[6],2) + Math.pow(t[7]-l[7],2) + Math.pow(t[8]-l[8],2) +
-                Math.pow(t[9]-l[9],2) + Math.pow(t[10]-l[10],2) + Math.pow(t[11]-l[11],2)
-            );
-            dtw[i][j] = cost + Math.min(dtw[i-1][j], dtw[i][j-1], dtw[i-1][j-1]);
-        }
-    }
-    return dtw[n][m] / Math.max(n, m);
+        progressBar.style.transition = 'width 5s linear';
+        progressBar.style.width = '100%';
+    }, 50);
 }
 
-
-// ==========================================
-// 4. BULLETPROOF WEB SERIAL & 3D MATH
-// ==========================================
-let port, reader, timeCount = 0;
-
-// Auto-Calibration Memory
+// 3D Math Functions
 let isCalibrated = false;
-let offsetPitch = [0, 0, 0, 0];
-let offsetRoll = [0, 0, 0, 0];
-
+let offsetPitch = [0, 0, 0, 0], offsetRoll = [0, 0, 0, 0];
 function calcPitch(y, z) { return Math.atan2(y, z); }
 function calcRoll(x, y, z) { return Math.atan2(-x, Math.sqrt(y * y + z * z)); }
 
+let port, reader, timeCount = 0;
+
 async function connectSerial() {
-    if (port) {
-        alert("Port is already open. Refresh the page to reset.");
-        return;
-    }
+    if (port) { alert("Port is already open."); return; }
 
     try {
         port = await navigator.serial.requestPort();
         await port.open({ baudRate: 115200 });
         
-        connectBtn.innerText = "Connected!"; connectBtn.style.backgroundColor = "#4caf50";
-        recordBtn.disabled = false; testBtn.disabled = false;
-        statusText.innerText = "Keep hand flat. Waiting for valid data to calibrate..."; 
-        statusText.style.color = "#bb86fc";
+        connectBtn.innerText = "Connected!"; 
+        connectBtn.classList.add('connected');
+        statusText.innerText = "Keep hand flat. Waiting for data to calibrate..."; 
+        statusText.style.color = "var(--blue)";
 
         const textDecoder = new TextDecoderStream();
         port.readable.pipeTo(textDecoder.writable);
@@ -208,52 +163,97 @@ async function connectSerial() {
 
             for (let line of lines) {
                 line = line.trim();
+                if (!line) continue;
                 
+// --- INTERCEPT HARDWARE STATE COMMANDS ---
+                if (line === "HAND_DETECTED") {
+                    // Start the UI prep phase
+                    statusText.innerText = "Hand detected. Arming system...";
+                    statusText.style.color = "var(--blue)";
+                    continue;
+                }
+                if (line === "HAND_REMOVED") {
+                    // Because of the Box's new grace period, if this triggers, the hand is TRULY gone.
+                    statusText.innerText = "Session cleared. Waiting for hand...";
+                    statusText.style.color = "var(--muted)";
+                    progressWrap.classList.remove('visible');
+                    // Reset internal states so it doesn't get stuck waiting for a gesture
+                    isRecordingTemplate = false;
+                    isTesting = false;
+                    continue;
+                }
+                if (line === "AUTH_START") {
+                    startProgressBar();
+                    if (savedTemplate.length === 0) {
+                        isRecordingTemplate = true;
+                        statusText.innerText = "RECORDING TEMPLATE... Perform gesture!";
+                        statusText.style.color = "var(--amber)";
+                    } else {
+                        currentTest = [];
+                        isTesting = true;
+                        statusText.innerText = "TESTING GESTURE... Match the template!";
+                        statusText.style.color = "var(--amber)";
+                    }
+                    continue;
+                }
+                if (line === "AUTH_STOP") {
+                    progressWrap.classList.remove('visible');
+                    if (isRecordingTemplate) {
+                        isRecordingTemplate = false;
+                        document.getElementById('templatePts').innerText = savedTemplate.length;
+                        statusText.innerText = `Template Saved! Place hand again to test.`;
+                        statusText.style.color = "var(--accent2)";
+                    } else if (isTesting) {
+                        isTesting = false;
+                        document.getElementById('testPts').innerText = currentTest.length;
+                        const dtwScore = calculateMultiDTW(savedTemplate, currentTest);
+                        scoreValue.innerText = dtwScore.toFixed(2);
+                        
+                        if (dtwScore < 30.0) { 
+                            statusText.innerText = `✅ ACCESS GRANTED`; 
+                            statusText.style.color = "var(--accent2)";
+                            scoreValue.className = "score-value ok";
+                        } else {
+                            statusText.innerText = `❌ ACCESS DENIED`; 
+                            statusText.style.color = "var(--red)";
+                            scoreValue.className = "score-value err";
+                        }
+                    }
+                    continue;
+                }
+
                 // FILTER GARBAGE
-                if (!line || /[a-zA-Z]/.test(line)) continue; 
+                if (/[a-zA-Z]/.test(line)) continue; 
 
                 const vals = line.split(',').map(Number);
-                
-                // DATA INTEGRITY CHECK
                 if (vals.length !== 12 || vals.some(isNaN)) continue; 
                 
-                // AUTHENTICATION LOGIC
+                // DATA CAPTURE
                 if (isRecordingTemplate) savedTemplate.push(vals);
                 if (isTesting) currentTest.push(vals);
 
-                // ABSOLUTE ANGLES
-                const p0 = calcPitch(vals[1], vals[2]); const r0 = calcRoll(vals[0], vals[1], vals[2]); // Hand
-                const p1 = calcPitch(vals[4], vals[5]); const r1 = calcRoll(vals[3], vals[4], vals[5]); // Index
-                const p2 = calcPitch(vals[7], vals[8]); const r2 = calcRoll(vals[6], vals[7], vals[8]); // Middle
-                const p3 = calcPitch(vals[10], vals[11]); const r3 = calcRoll(vals[9], vals[10], vals[11]); // Thumb
+                // --- 3D CALIBRATION & RENDERING ---
+                const p0 = calcPitch(vals[1], vals[2]), r0 = calcRoll(vals[0], vals[1], vals[2]); 
+                const p1 = calcPitch(vals[4], vals[5]), r1 = calcRoll(vals[3], vals[4], vals[5]); 
+                const p2 = calcPitch(vals[7], vals[8]), r2 = calcRoll(vals[6], vals[7], vals[8]); 
+                const p3 = calcPitch(vals[10], vals[11]), r3 = calcRoll(vals[9], vals[10], vals[11]); 
 
-                // AUTO-CALIBRATION TRIGGER
                 if (!isCalibrated) {
                     offsetPitch = [p0, p1, p2, p3];
                     offsetRoll = [r0, r1, r2, r3];
                     isCalibrated = true;
-                    statusText.innerText = "✅ Calibrated! Ready to Record.";
+                    statusText.innerText = "✅ Calibrated! Place hand in box to begin.";
+                    statusText.style.color = "var(--accent2)";
                 }
 
-                // APPLY CALIBRATION OFFSETS
-                const calibHandP = p0 - offsetPitch[0];     const calibHandR = r0 - offsetRoll[0];
-                const calibIndexP = p1 - offsetPitch[1];    const calibIndexR = r1 - offsetRoll[1];
-                const calibMiddleP = p2 - offsetPitch[2];   const calibMiddleR = r2 - offsetRoll[2];
-                const calibThumbP = p3 - offsetPitch[3];    const calibThumbR = r3 - offsetRoll[3];
-
-                // UPDATE 3D BASE
-                palmFrame.rotation.x = calibHandP;
-                palmFrame.rotation.z = calibHandR;
-
-                // UPDATE 3D FINGERS (Relative to Hand Base)
-                indexJoint.rotation.x = calibIndexP - calibHandP;
-                indexJoint.rotation.z = calibIndexR - calibHandR;
-                
-                middleJoint.rotation.x = calibMiddleP - calibHandP;
-                middleJoint.rotation.z = calibMiddleR - calibHandR;
-
-                thumbJoint.rotation.x = calibThumbP - calibHandP;
-                thumbJoint.rotation.z = calibThumbR - calibHandR;
+                palmFrame.rotation.x = p0 - offsetPitch[0];
+                palmFrame.rotation.z = r0 - offsetRoll[0];
+                indexJoint.rotation.x = (p1 - offsetPitch[1]) - palmFrame.rotation.x;
+                indexJoint.rotation.z = (r1 - offsetRoll[1]) - palmFrame.rotation.z;
+                middleJoint.rotation.x = (p2 - offsetPitch[2]) - palmFrame.rotation.x;
+                middleJoint.rotation.z = (r2 - offsetRoll[2]) - palmFrame.rotation.z;
+                thumbJoint.rotation.x = (p3 - offsetPitch[3]) - palmFrame.rotation.x;
+                thumbJoint.rotation.z = (r3 - offsetRoll[3]) - palmFrame.rotation.z;
                 
                 renderer.render(scene, camera);
 
@@ -264,7 +264,6 @@ async function connectSerial() {
                     chart.data.datasets[0].data.push(vals[offset]);
                     chart.data.datasets[1].data.push(vals[offset+1]);
                     chart.data.datasets[2].data.push(vals[offset+2]);
-                    
                     if (chart.data.labels.length > 50) {
                         chart.data.labels.shift();
                         chart.data.datasets.forEach(d => d.data.shift());
@@ -277,9 +276,38 @@ async function connectSerial() {
     } catch (error) {
         console.error(error);
         statusText.innerText = "Error: Port Locked or Browser Denied Access."; 
-        statusText.style.color = "#ff5252";
+        statusText.style.color = "var(--red)";
     }
 }
 
 connectBtn.addEventListener('click', connectSerial);
-renderer.render(scene, camera);
+
+// ==========================================
+// THE 12-DIMENSIONAL DTW MATH ENGINE
+// ==========================================
+function calculateMultiDTW(template, liveGesture) {
+    const n = template.length, m = liveGesture.length;
+    if (n === 0 || m === 0) return Infinity;
+    
+    const dtw = Array.from({ length: n + 1 }, () => Array(m + 1).fill(Infinity));
+    dtw[0][0] = 0;
+    
+    for (let i = 1; i <= n; i++) {
+        for (let j = 1; j <= m; j++) {
+            const t = template[i-1], l = liveGesture[j-1];
+            
+            // Calculate the 12-DOF Euclidean distance between the two frames
+            const cost = Math.sqrt(
+                Math.pow(t[0]-l[0],2) + Math.pow(t[1]-l[1],2) + Math.pow(t[2]-l[2],2) +
+                Math.pow(t[3]-l[3],2) + Math.pow(t[4]-l[4],2) + Math.pow(t[5]-l[5],2) +
+                Math.pow(t[6]-l[6],2) + Math.pow(t[7]-l[7],2) + Math.pow(t[8]-l[8],2) +
+                Math.pow(t[9]-l[9],2) + Math.pow(t[10]-l[10],2) + Math.pow(t[11]-l[11],2)
+            );
+            
+            dtw[i][j] = cost + Math.min(dtw[i-1][j], dtw[i][j-1], dtw[i-1][j-1]);
+        }
+    }
+    
+    // Normalize the score based on how long the gesture took
+    return dtw[n][m] / Math.max(n, m);
+}
