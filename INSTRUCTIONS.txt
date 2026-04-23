@@ -1,0 +1,24 @@
+Prerequisite - Python3
+
+Step 0 - Disconnect everything. Nothing should be connected.
+
+Step 1 - Start a server after cd'ing to current dir
+```python
+python3 -m http.server 8000
+```
+
+Step 2 - wear bioGlove and connect to computer. WIRED CONNECTION TO COMPUTER REQUIRED
+	Click Connect device on the webpage. upon being prompted to select a device to connect to, Select the correct serial bus
+
+Step 3 - Connect the detectBOX to a power supply (need not be the same computer, but can be). it is essential that this step be done AFTER glove is detected, as the source relies on the hardcoded MAC address of the bioGlove ESP, and will fail if the address doesn't exist when powered on.
+
+Follow the instructions in the webpage and proceed.
+
+
+Common problems
+The common solution is to inspect the console (using Ctrl+Shift+I in most browsers)
+>>>Hand not detecting - Try from step 2 again. resfresh the server made in step 1.
+>>>Passwd recorded, but doenst let me verify - Remove your hand from detectionBOX, wait for 5 Mississippi and try again
+>>>Serial Port not available - Close the arduinoIDE. the ArduinoIDE runs auto-Index which occupy the ports and wont let the browser access them.
+
+if all else fails, in claude we trust
