@@ -3,165 +3,186 @@
 // ==========================================
 const threeContainer = document.getElementById('three-container');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x060809);
+scene.background = new THREE.Color(0x050505);
 
-// Subtle grid on the floor
-const gridHelper = new THREE.GridHelper(20, 20, 0x1a2030, 0x111820);
-gridHelper.position.y = -3.5;
-scene.add(gridHelper);
-
-// Ambient + directional lighting for depth
-const ambientLight = new THREE.AmbientLight(0x223344, 1.2);
-scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0x7be0a8, 0.8);
-dirLight.position.set(5, 10, 5);
-scene.add(dirLight);
-const rimLight = new THREE.DirectionalLight(0x6eb8f7, 0.4);
-rimLight.position.set(-5, 3, -5);
-scene.add(rimLight);
-
-const camera = new THREE.PerspectiveCamera(40, threeContainer.clientWidth / threeContainer.clientHeight, 0.1, 100);
-camera.position.set(0, 10, 12);
-camera.lookAt(0, 1, 0);
+const camera = new THREE.PerspectiveCamera(45, threeContainer.clientWidth / threeContainer.clientHeight, 0.1, 100);
+camera.position.set(0, 9, 10);
+camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(threeContainer.clientWidth, threeContainer.clientHeight);
 threeContainer.appendChild(renderer.domElement);
 
-// ── MATERIALS ──────────────────────────────────────────────
-const matPalm    = new THREE.MeshLambertMaterial({ color: 0x1e3040, wireframe: false });
-const matPalmWire= new THREE.MeshBasicMaterial({ color: 0x2e4a60, wireframe: true });
-const matIndex   = new THREE.MeshLambertMaterial({ color: 0xc0392b }); // red
-const matMiddle  = new THREE.MeshLambertMaterial({ color: 0x27ae60 }); // green
-const matThumb   = new THREE.MeshLambertMaterial({ color: 0x2980b9 }); // blue
-const matJoint   = new THREE.MeshLambertMaterial({ color: 0xecf0f1 });
-const matSensor  = new THREE.MeshLambertMaterial({ color: 0xf0c060, emissive: 0x503000 }); // amber = sensor
+// ── MATERIALS — original wireframe/solid aesthetic ─────────
+const MAT_INDEX  = new THREE.MeshBasicMaterial({ color: 0xff5252 });
+const MAT_MIDDLE = new THREE.MeshBasicMaterial({ color: 0x4caf50 });
+const MAT_RING   = new THREE.MeshBasicMaterial({ color: 0x556677 });
+const MAT_PINKY  = new THREE.MeshBasicMaterial({ color: 0x3a4a58 });
+const MAT_THUMB  = new THREE.MeshBasicMaterial({ color: 0x448aff });
+const MAT_JOINT  = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+const MAT_SENSOR = new THREE.MeshBasicMaterial({ color: 0xf0c060, wireframe: true });
+const MAT_PALM   = new THREE.LineBasicMaterial({ color: 0x445566 });
+const MAT_BRACE  = new THREE.LineBasicMaterial({ color: 0x1e2d3d });
 
-// ── SENSOR GLOW HELPER ─────────────────────────────────────
-function createSensorMarker() {
-    const g = new THREE.SphereGeometry(0.22, 10, 10);
-    return new THREE.Mesh(g, matSensor);
+// ── JOINT SPHERE ───────────────────────────────────────────
+function makeJoint(r = 0.17) {
+    return new THREE.Mesh(new THREE.SphereGeometry(r, 7, 7), MAT_JOINT);
 }
 
-// ── JOINT SPHERE HELPER ────────────────────────────────────
-function createJointSphere(r = 0.18) {
-    const g = new THREE.SphereGeometry(r, 8, 8);
-    return new THREE.Mesh(g, matJoint);
+// Amber sensor marker
+function makeSensor(r = 0.24) {
+    return new THREE.Mesh(new THREE.SphereGeometry(r, 8, 8), MAT_SENSOR);
 }
 
-// ── BONE CYLINDER HELPER ───────────────────────────────────
-// Returns a Group with a cylinder along +Z, pivoting at origin
-function createBoneCylinder(mat, length, radiusTop = 0.09, radiusBot = 0.13) {
-    const g = new THREE.CylinderGeometry(radiusTop, radiusBot, length, 8);
-    g.translate(0, -length / 2, 0); // tip at y=0, base at y=-length
-    g.rotateX(-Math.PI / 2);        // now extends in +Z
+// Tapered cylinder bone extending in +Z from its origin
+function makeBone(mat, length, rBase = 0.10, rTip = 0.055) {
+    const g = new THREE.CylinderGeometry(rTip, rBase, length, 7);
+    g.translate(0, -length / 2, 0);
+    g.rotateX(-Math.PI / 2);
     return new THREE.Mesh(g, mat);
 }
 
 // ── FINGER BUILDER ─────────────────────────────────────────
-// Creates a 2-segment finger (proximal + distal phalanx) with joint spheres
-// Returns { pivot (THREE.Group), mid (THREE.Group), tip (THREE.Group) }
-// pivot goes at knuckle position on the palm group.
-// Rotation of pivot.rotation.x/z drives the knuckle (IMU-driven).
-function buildFinger(mat, proxLen, distLen) {
-    const pivot = new THREE.Group(); // knuckle pivot
+// Returns { root, pip, dip } — all THREE.Group pivots.
+// root = MCP knuckle (position on palm, driven by IMU)
+// pip  = PIP knuckle (position at end of proximal bone)
+// dip  = DIP knuckle (position at end of middle bone)
+// By exposing pip & dip we can drive each joint independently
+// to distribute the total curl angle anatomically.
+function buildFinger(mat, pLen, mLen, dLen, hasSensor) {
+    const root = new THREE.Group();   // MCP pivot
 
-    // Proximal knuckle sphere
-    const knuckleSphere = createJointSphere(0.17);
-    pivot.add(knuckleSphere);
+    root.add(makeJoint(0.16));
+    root.add(makeBone(mat, pLen));
 
-    // Proximal bone
-    const proxBone = createBoneCylinder(mat, proxLen);
-    pivot.add(proxBone);
+    const pip = new THREE.Group();
+    pip.position.z = pLen;
+    pip.add(makeJoint(0.13));
+    pip.add(makeBone(mat, mLen, 0.08, 0.05));
 
-    // Mid joint (PIP) — positioned at tip of proximal bone
-    const midPivot = new THREE.Group();
-    midPivot.position.z = proxLen; // end of proximal bone (along +Z)
-    const midSphere = createJointSphere(0.13);
-    midPivot.add(midSphere);
+    const dip = new THREE.Group();
+    dip.position.z = mLen;
+    dip.add(makeJoint(0.10));
+    dip.add(makeBone(mat, dLen, 0.06, 0.03));
 
-    // Distal bone
-    const distBone = createBoneCylinder(mat, distLen);
-    midPivot.add(distBone);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), mat);
+    tip.position.z = dLen;
+    dip.add(tip);
 
-    // Tip sphere
-    const tipSphere = createJointSphere(0.10);
-    tipSphere.position.z = distLen;
-    midPivot.add(tipSphere);
+    if (hasSensor) {
+        const s = makeSensor(0.20);
+        s.position.z = dLen * 0.5;
+        dip.add(s);
+    }
 
-    pivot.add(midPivot);
-
-    return { pivot, midPivot };
+    pip.add(dip);
+    root.add(pip);
+    return { root, pip, dip };
 }
 
-// ── PALM ───────────────────────────────────────────────────
-// A flat rounded palm box as the base
-const palmGeo = new THREE.BoxGeometry(3.2, 0.38, 4.0, 2, 1, 2);
-const palmMesh = new THREE.Mesh(palmGeo, matPalm);
-const palmWire = new THREE.Mesh(palmGeo, matPalmWire);
+// ── THUMB BUILDER ──────────────────────────────────────────
+// Thumb has only 2 phalanges visible (metacarpal + proximal + distal)
+// and a different natural curl axis due to its CMC orientation.
+function buildThumb(mat, pLen, mLen, dLen, hasSensor) {
+    const root = new THREE.Group();   // CMC/MCP pivot
+
+    root.add(makeJoint(0.18));
+    root.add(makeBone(mat, pLen, 0.12, 0.07));
+
+    const pip = new THREE.Group();
+    pip.position.z = pLen;
+    pip.add(makeJoint(0.14));
+    pip.add(makeBone(mat, mLen, 0.09, 0.055));
+
+    const dip = new THREE.Group();
+    dip.position.z = mLen;
+    dip.add(makeJoint(0.11));
+    dip.add(makeBone(mat, dLen, 0.07, 0.04));
+
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), mat);
+    tip.position.z = dLen;
+    dip.add(tip);
+
+    if (hasSensor) {
+        const s = makeSensor(0.22);
+        s.position.z = dLen * 0.4;
+        dip.add(s);
+    }
+
+    pip.add(dip);
+    root.add(pip);
+    return { root, pip, dip };
+}
+
+// ── PALM GROUP ─────────────────────────────────────────────
 const palmGroup = new THREE.Group();
-palmGroup.add(palmMesh);
-palmGroup.add(palmWire);
 scene.add(palmGroup);
 
-// IMU sensor on back of hand
-const backSensor = createSensorMarker();
-backSensor.position.set(0, 0.32, 0.4);
+const palmPts = [
+    new THREE.Vector3(-1.35, 0,  1.9),
+    new THREE.Vector3( 1.65, 0,  1.9),
+    new THREE.Vector3( 1.65, 0, -1.0),
+    new THREE.Vector3(-1.35, 0, -1.0),
+    new THREE.Vector3(-1.35, 0,  1.9),
+];
+palmGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(palmPts), MAT_PALM
+));
+
+palmGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([palmPts[0], palmPts[2]]), MAT_BRACE
+));
+palmGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([palmPts[1], palmPts[3]]), MAT_BRACE
+));
+
+palmGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-1.35, 0, 1.9),
+        new THREE.Vector3(-0.7,  0, 2.7),
+        new THREE.Vector3( 0.7,  0, 2.7),
+        new THREE.Vector3( 1.65, 0, 1.9),
+    ]), MAT_BRACE
+));
+
+// Back-of-hand IMU sensor (sensor 0)
+const backSensor = makeSensor(0.28);
+backSensor.position.set(0.15, 0, 0.45);
 palmGroup.add(backSensor);
 
-// ── INDEX FINGER ───────────────────────────────────────────
-const { pivot: indexPivot, midPivot: indexMid } = buildFinger(matIndex, 1.7, 1.3);
-indexPivot.position.set(-0.9, 0.19, -2.0);
-// IMU on index fingertip area
-const indexSensor = createSensorMarker();
-indexSensor.position.z = 1.3; // at distal tip
-indexMid.add(indexSensor);
-palmGroup.add(indexPivot);
+// ── FINGERS ────────────────────────────────────────────────
+const index  = buildFinger(MAT_INDEX,  1.55, 0.95, 0.75, true);
+index.root.position.set(-0.90, 0, -1.0);
+palmGroup.add(index.root);
 
-// ── MIDDLE FINGER ──────────────────────────────────────────
-const { pivot: middlePivot, midPivot: middleMid } = buildFinger(matMiddle, 1.85, 1.4);
-middlePivot.position.set(0.2, 0.19, -2.0);
-const middleSensor = createSensorMarker();
-middleSensor.position.z = 1.4;
-middleMid.add(middleSensor);
-palmGroup.add(middlePivot);
+const middle = buildFinger(MAT_MIDDLE, 1.70, 1.05, 0.80, true);
+middle.root.position.set(0.05, 0, -1.0);
+palmGroup.add(middle.root);
 
-// ── RING FINGER (no IMU, decorative) ──────────────────────
-const { pivot: ringPivot } = buildFinger(
-    new THREE.MeshLambertMaterial({ color: 0x34495e }), 1.75, 1.25
-);
-ringPivot.position.set(1.1, 0.19, -2.0);
-palmGroup.add(ringPivot);
+const ring   = buildFinger(MAT_RING,   1.60, 0.98, 0.75, false);
+ring.root.position.set(0.95, 0, -1.0);
+palmGroup.add(ring.root);
 
-// ── PINKY (no IMU, decorative) ────────────────────────────
-const { pivot: pinkyPivot } = buildFinger(
-    new THREE.MeshLambertMaterial({ color: 0x2c3e50 }), 1.3, 1.0
-);
-pinkyPivot.position.set(1.85, 0.19, -1.6);
-pinkyPivot.rotation.y = 0.15;
-palmGroup.add(pinkyPivot);
+const pinky  = buildFinger(MAT_PINKY,  1.15, 0.72, 0.55, false);
+pinky.root.position.set(1.60, 0, -0.75);
+pinky.root.rotation.y = 0.14;
+palmGroup.add(pinky.root);
 
-// ── THUMB ──────────────────────────────────────────────────
-const { pivot: thumbPivot, midPivot: thumbMid } = buildFinger(matThumb, 1.4, 1.1);
-thumbPivot.position.set(-1.7, 0.19, 0.6);
-thumbPivot.rotation.y = -Math.PI / 3.5;
-thumbPivot.rotation.order = "YXZ";
-const thumbSensor = createSensorMarker();
-thumbSensor.position.z = 1.1;
-thumbMid.add(thumbSensor);
-palmGroup.add(thumbPivot);
+const thumb  = buildThumb(MAT_THUMB,   1.20, 0.85, 0.65, true);
+thumb.root.position.set(-1.55, 0, 0.55);
+thumb.root.rotation.order = "YXZ";
+thumb.root.rotation.y = -Math.PI / 3.2;
+thumb.root.rotation.z = -0.20;
+palmGroup.add(thumb.root);
 
-// Slow idle rotate when no data
+// ── IDLE ROTATION ──────────────────────────────────────────
 let idleRotate = true;
-function animateIdle() {
-    if (idleRotate) {
-        palmGroup.rotation.y += 0.004;
-    }
+(function animate() {
+    requestAnimationFrame(animate);
+    if (idleRotate) palmGroup.rotation.y += 0.005;
     renderer.render(scene, camera);
-    requestAnimationFrame(animateIdle);
-}
-animateIdle();
+})();
 
 window.addEventListener('resize', () => {
     camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
@@ -171,47 +192,18 @@ window.addEventListener('resize', () => {
 
 
 // ==========================================
-// 2. CHART.JS 2D SETUP — IMPROVED
+// 2. CHART.JS 2D SETUP
 // ==========================================
-const CHART_WINDOW = 80; // more history visible
-
-function createChart(canvasId, label, colors) {
+function createChart(canvasId) {
     const ctx = document.getElementById(canvasId).getContext('2d');
     return new Chart(ctx, {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                {
-                    label: 'X',
-                    borderColor: colors[0],
-                    backgroundColor: colors[0] + '18',
-                    data: [],
-                    tension: 0.35,
-                    pointRadius: 0,
-                    borderWidth: 1.8,
-                    fill: false,
-                },
-                {
-                    label: 'Y',
-                    borderColor: colors[1],
-                    backgroundColor: colors[1] + '18',
-                    data: [],
-                    tension: 0.35,
-                    pointRadius: 0,
-                    borderWidth: 1.8,
-                    fill: false,
-                },
-                {
-                    label: 'Z',
-                    borderColor: colors[2],
-                    backgroundColor: colors[2] + '18',
-                    data: [],
-                    tension: 0.35,
-                    pointRadius: 0,
-                    borderWidth: 1.8,
-                    fill: false,
-                }
+                { label: 'X', borderColor: '#f47575', backgroundColor: 'rgba(244,117,117,0.06)', data: [], tension: 0.3, pointRadius: 0, borderWidth: 1.8, fill: false },
+                { label: 'Y', borderColor: '#6eb8f7', backgroundColor: 'rgba(110,184,247,0.06)', data: [], tension: 0.3, pointRadius: 0, borderWidth: 1.8, fill: false },
+                { label: 'Z', borderColor: '#7be0a8', backgroundColor: 'rgba(123,224,168,0.06)', data: [], tension: 0.3, pointRadius: 0, borderWidth: 1.8, fill: false }
             ]
         },
         options: {
@@ -223,7 +215,7 @@ function createChart(canvasId, label, colors) {
                 y: {
                     suggestedMin: -18,
                     suggestedMax: 18,
-                    grid: { color: 'rgba(46,53,64,0.7)', drawBorder: false },
+                    grid: { color: '#181e24', drawBorder: false },
                     border: { color: '#232830' },
                     ticks: {
                         color: '#445060',
@@ -241,11 +233,10 @@ function createChart(canvasId, label, colors) {
                     labels: {
                         color: '#5a6475',
                         font: { family: "'Syne Mono', monospace", size: 9 },
-                        boxWidth: 10,
+                        boxWidth: 20,
                         boxHeight: 2,
                         padding: 8,
-                        usePointStyle: true,
-                        pointStyle: 'line'
+                        usePointStyle: false
                     }
                 },
                 tooltip: {
@@ -267,11 +258,10 @@ function createChart(canvasId, label, colors) {
     });
 }
 
-// Sensor color sets: [X, Y, Z]
-const handChart   = createChart('handChart',   'Palm',   ['#f47575', '#6eb8f7', '#7be0a8']);
-const indexChart  = createChart('indexChart',  'Index',  ['#ff7043', '#42a5f5', '#66bb6a']);
-const middleChart = createChart('middleChart', 'Middle', ['#ef5350', '#29b6f6', '#26a69a']);
-const thumbChart  = createChart('thumbChart',  'Thumb',  ['#ec407a', '#5c6bc0', '#8d6e63']);
+const handChart   = createChart('handChart');
+const indexChart  = createChart('indexChart');
+const middleChart = createChart('middleChart');
+const thumbChart  = createChart('thumbChart');
 
 
 // ==========================================
@@ -286,6 +276,7 @@ const scoreValue = document.getElementById('scoreValue');
 const progressWrap = document.getElementById('progressWrap');
 const progressBar = document.getElementById('progressBar');
 
+// Remove manual button dependencies, keep them for reset purposes if needed
 document.getElementById('recordTemplateBtn').addEventListener('click', () => {
     savedTemplate = [];
     statusText.innerText = "Template cleared. Place hand to record new template.";
@@ -307,6 +298,58 @@ let isCalibrated = false;
 let offsetPitch = [0, 0, 0, 0], offsetRoll = [0, 0, 0, 0];
 function calcPitch(y, z) { return Math.atan2(y, z); }
 function calcRoll(x, y, z) { return Math.atan2(-x, Math.sqrt(y * y + z * z)); }
+
+// ── ANGLE DISTRIBUTION HELPERS ─────────────────────────────
+// The IMU sits on the distal phalanx and measures the total
+// angle of the whole finger relative to the back of the hand.
+// We distribute that total angle across MCP / PIP / DIP in
+// anatomically realistic proportions so each joint actually
+// bends — making the curl visually convincing.
+//
+// Curl (flexion) anatomy ratios (approximate from biomechanics):
+//   MCP  ~40%   PIP  ~45%   DIP  ~15%
+// Abduction (side-spread) lives almost entirely at the MCP:
+//   MCP ~100%   PIP/DIP ~0%
+//
+// We also clamp angles so joints can't hyper-extend.
+
+function distributeFingerCurl(totalCurl, totalSpread) {
+    // clamp curl to [-PI/2 .. PI*0.9] (flex range, no hyper-extension)
+    const curl = Math.max(-Math.PI / 2, Math.min(Math.PI * 0.9, totalCurl));
+    const spread = Math.max(-0.4, Math.min(0.4, totalSpread));
+    return {
+        mcpCurl:   curl  * 0.40,
+        pipCurl:   curl  * 0.45,
+        dipCurl:   curl  * 0.15,
+        mcpSpread: spread * 1.00,
+    };
+}
+
+function distributeThumbCurl(totalCurl, totalSpread) {
+    // Thumb has a wider natural range and less DIP
+    const curl   = Math.max(-0.4, Math.min(Math.PI * 0.75, totalCurl));
+    const spread = Math.max(-0.5, Math.min(0.5, totalSpread));
+    return {
+        mcpCurl:   curl  * 0.50,
+        pipCurl:   curl  * 0.40,
+        dipCurl:   curl  * 0.10,
+        mcpSpread: spread * 0.8,
+    };
+}
+
+// Apply computed joint angles to a finger's root/pip/dip groups.
+// curlAxis = 'x' for fingers (finger extends in +Z, curl rotates around X)
+// spreadAxis = 'z' for fingers extending from palm
+function applyFingerAngles(finger, curlTotal, spreadTotal, isThumb = false) {
+    const dist = isThumb
+        ? distributeThumbCurl(curlTotal, spreadTotal)
+        : distributeFingerCurl(curlTotal, spreadTotal);
+
+    finger.root.rotation.x = dist.mcpCurl;
+    finger.root.rotation.z = dist.mcpSpread;
+    finger.pip.rotation.x  = dist.pipCurl;
+    finger.dip.rotation.x  = dist.dipCurl;
+}
 
 let port, reader, timeCount = 0;
 
@@ -336,21 +379,25 @@ async function connectSerial() {
 
             buffer += value;
             let lines = buffer.split(/\r?\n/);
-            buffer = lines.pop();
+            buffer = lines.pop(); // Save incomplete chunk
 
             for (let line of lines) {
                 line = line.trim();
                 if (!line) continue;
 
+// --- INTERCEPT HARDWARE STATE COMMANDS ---
                 if (line === "HAND_DETECTED") {
+                    // Start the UI prep phase
                     statusText.innerText = "Hand detected. Arming system...";
                     statusText.style.color = "var(--blue)";
                     continue;
                 }
                 if (line === "HAND_REMOVED") {
+                    // Because of the Box's new grace period, if this triggers, the hand is TRULY gone.
                     statusText.innerText = "Session cleared. Waiting for hand...";
                     statusText.style.color = "var(--muted)";
                     progressWrap.classList.remove('visible');
+                    // Reset internal states so it doesn't get stuck waiting for a gesture
                     isRecordingTemplate = false;
                     isTesting = false;
                     continue;
@@ -395,16 +442,17 @@ async function connectSerial() {
                     continue;
                 }
 
+                // FILTER GARBAGE
                 if (/[a-zA-Z]/.test(line)) continue;
 
                 const vals = line.split(',').map(Number);
                 if (vals.length !== 12 || vals.some(isNaN)) continue;
 
+                // DATA CAPTURE
                 if (isRecordingTemplate) savedTemplate.push(vals);
                 if (isTesting) currentTest.push(vals);
 
                 // --- 3D CALIBRATION & RENDERING ---
-                // Data layout: [hand(0-2), index(3-5), middle(6-8), thumb(9-11)]
                 const p0 = calcPitch(vals[1], vals[2]),  r0 = calcRoll(vals[0], vals[1], vals[2]);
                 const p1 = calcPitch(vals[4], vals[5]),  r1 = calcRoll(vals[3], vals[4], vals[5]);
                 const p2 = calcPitch(vals[7], vals[8]),  r2 = calcRoll(vals[6], vals[7], vals[8]);
@@ -418,21 +466,24 @@ async function connectSerial() {
                     statusText.style.color = "var(--accent2)";
                 }
 
-                // Palm rotation (back-of-hand IMU, sensor 0)
+                // Palm driven by back-of-hand IMU
                 palmGroup.rotation.x = p0 - offsetPitch[0];
                 palmGroup.rotation.z = r0 - offsetRoll[0];
 
-                // Index finger — relative to palm
-                indexPivot.rotation.x = (p1 - offsetPitch[1]) - palmGroup.rotation.x;
-                indexPivot.rotation.z = (r1 - offsetRoll[1])  - palmGroup.rotation.z;
+                // Relative angles for each finger sensor vs palm
+                const indexCurl   = (p1 - offsetPitch[1]) - palmGroup.rotation.x;
+                const indexSpread = (r1 - offsetRoll[1])  - palmGroup.rotation.z;
 
-                // Middle finger — relative to palm
-                middlePivot.rotation.x = (p2 - offsetPitch[2]) - palmGroup.rotation.x;
-                middlePivot.rotation.z = (r2 - offsetRoll[2])  - palmGroup.rotation.z;
+                const middleCurl   = (p2 - offsetPitch[2]) - palmGroup.rotation.x;
+                const middleSpread = (r2 - offsetRoll[2])  - palmGroup.rotation.z;
 
-                // Thumb — relative to palm
-                thumbPivot.rotation.x = (p3 - offsetPitch[3]) - palmGroup.rotation.x;
-                thumbPivot.rotation.z = (r3 - offsetRoll[3])  - palmGroup.rotation.z;
+                const thumbCurl   = (p3 - offsetPitch[3]) - palmGroup.rotation.x;
+                const thumbSpread = (r3 - offsetRoll[3])  - palmGroup.rotation.z;
+
+                // Distribute angles across joints for natural-looking bend
+                applyFingerAngles(index,  indexCurl,  indexSpread,  false);
+                applyFingerAngles(middle, middleCurl, middleSpread, false);
+                applyFingerAngles(thumb,  thumbCurl,  thumbSpread,  true);
 
                 // UPDATE 2D CHARTS
                 [handChart, indexChart, middleChart, thumbChart].forEach((chart, idx) => {
@@ -441,11 +492,11 @@ async function connectSerial() {
                     chart.data.datasets[0].data.push(vals[offset]);
                     chart.data.datasets[1].data.push(vals[offset + 1]);
                     chart.data.datasets[2].data.push(vals[offset + 2]);
-                    if (chart.data.labels.length > CHART_WINDOW) {
+                    if (chart.data.labels.length > 60) {
                         chart.data.labels.shift();
                         chart.data.datasets.forEach(d => d.data.shift());
                     }
-                    chart.update('none'); // skip animation entirely for perf
+                    chart.update('none');
                 });
                 timeCount++;
             }
@@ -471,18 +522,20 @@ function calculateMultiDTW(template, liveGesture) {
 
     for (let i = 1; i <= n; i++) {
         for (let j = 1; j <= m; j++) {
-            const t = template[i - 1], l = liveGesture[j - 1];
+            const t = template[i-1], l = liveGesture[j-1];
 
+            // Calculate the 12-DOF Euclidean distance between the two frames
             const cost = Math.sqrt(
-                Math.pow(t[0]-l[0],2)  + Math.pow(t[1]-l[1],2)  + Math.pow(t[2]-l[2],2)  +
-                Math.pow(t[3]-l[3],2)  + Math.pow(t[4]-l[4],2)  + Math.pow(t[5]-l[5],2)  +
-                Math.pow(t[6]-l[6],2)  + Math.pow(t[7]-l[7],2)  + Math.pow(t[8]-l[8],2)  +
-                Math.pow(t[9]-l[9],2)  + Math.pow(t[10]-l[10],2)+ Math.pow(t[11]-l[11],2)
+                Math.pow(t[0]-l[0],2) + Math.pow(t[1]-l[1],2) + Math.pow(t[2]-l[2],2) +
+                Math.pow(t[3]-l[3],2) + Math.pow(t[4]-l[4],2) + Math.pow(t[5]-l[5],2) +
+                Math.pow(t[6]-l[6],2) + Math.pow(t[7]-l[7],2) + Math.pow(t[8]-l[8],2) +
+                Math.pow(t[9]-l[9],2) + Math.pow(t[10]-l[10],2) + Math.pow(t[11]-l[11],2)
             );
 
             dtw[i][j] = cost + Math.min(dtw[i-1][j], dtw[i][j-1], dtw[i-1][j-1]);
         }
     }
 
+    // Normalize the score based on how long the gesture took
     return dtw[n][m] / Math.max(n, m);
 }
