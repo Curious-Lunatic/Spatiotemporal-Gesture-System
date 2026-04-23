@@ -278,9 +278,31 @@ const progressBar = document.getElementById('progressBar');
 
 // Remove manual button dependencies, keep them for reset purposes if needed
 document.getElementById('recordTemplateBtn').addEventListener('click', () => {
+    statusText.innerText = "Place hand in box to record new template.";
+    statusText.style.color = "var(--blue)";
+});
+document.getElementById('resetTemplateBtn').addEventListener('click', () => {
+    if (savedTemplate.length === 0) {
+        statusText.innerText = "No template to reset.";
+        statusText.style.color = "var(--muted)";
+        return;
+    }
+
     savedTemplate = [];
-    statusText.innerText = "Template cleared. Place hand to record new template.";
+    currentTest = [];
+
+    isRecordingTemplate = false;
+    isTesting = false;
+    progressWrap.classList.remove('visible');
+
+    document.getElementById('templatePts').innerText = "0";
+    document.getElementById('testPts').innerText = "0";
+
     scoreValue.innerText = "—";
+    scoreValue.className = "score-value";
+
+    statusText.innerText = "🔄 Password reset. Perform new gesture to record.";
+    statusText.style.color = "var(--amber)";
 });
 
 function startProgressBar() {
