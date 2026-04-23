@@ -544,6 +544,25 @@
         </div>
       </div>
 
+      <!-- Sensor Map -->
+      <div class="sidebar-section">
+        <div class="section-label">Sensor Map</div>
+        <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+          <div style="display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:0.6rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#7be0a8;flex-shrink:0;"></div> S0 — Back of Hand
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:0.6rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#f47575;flex-shrink:0;"></div> S1 — Index Finger
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:0.6rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;"></div> S2 — Middle Finger
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:0.6rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#6eb8f7;flex-shrink:0;"></div> S3 — Thumb
+          </div>
+        </div>
+      </div>
+
       <!-- Stats -->
       <div class="sidebar-section" style="flex: 1;">
         <div class="section-label">Session Data</div>
@@ -575,7 +594,7 @@
       <div id="three-container"></div>
       <div class="scanlines"></div>
       <div class="viewport-overlay">
-        <span class="viewport-tag">3D Skeletal View</span>
+        <span class="viewport-tag">3D Skeletal View — 4-Sensor IMU</span>
         <span class="viewport-tag" id="viewportState">IDLE</span>
       </div>
     </div>
@@ -584,7 +603,7 @@
     <div class="charts-area">
       <div class="chart-card">
         <div class="chart-header">
-          <span class="chart-name">Palm / Base</span>
+          <span class="chart-name">Back of Hand</span>
           <div class="chart-axes">
             <span class="axis-badge axis-x">X</span>
             <span class="axis-badge axis-y">Y</span>
