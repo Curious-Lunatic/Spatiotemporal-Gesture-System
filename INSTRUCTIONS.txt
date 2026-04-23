@@ -18,7 +18,7 @@ Follow the instructions in the webpage and proceed.
 Common problems
 The common solution is to inspect the console (using Ctrl+Shift+I in most browsers)
 >>>Hand not detecting - Try from step 2 again. resfresh the server made in step 1.
->>>Passwd recorded, but doenst let me verify - Remove your hand from detectionBOX, wait for 5 Mississippi and try again
+>>>Passwd recorded, but doenst let me verify - Remove your hand from detectionBOX, wait for 5 Mississippi (Or let temp session expire) and try again
 >>>Serial Port not available - Close the arduinoIDE. the ArduinoIDE runs auto-Index which occupy the ports and wont let the browser access them.
 
 if all else fails, in claude we trust
