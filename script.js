@@ -1,6 +1,8 @@
 // ==========================================
 // 1. THREE.JS 3D SKELETAL HAND SETUP
 // ==========================================
+// This script acts as our Server and Dashboard combined. 
+// It reads the serial data from the Glove, renders a 3D model, and calculates the security score using DTW math.
 const threeContainer = document.getElementById('three-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050505);
@@ -375,6 +377,9 @@ function applyFingerAngles(finger, curlTotal, spreadTotal, isThumb = false) {
 
 let port, reader, timeCount = 0;
 
+// [Data Collection Mechanism]: We use the Web Serial API to read the USB port directly. 
+// Note: If we were testing this locally on a laptop using QEMU emulation [cite: 756], we would use Slirp networking and OpenCores Ethernet [cite: 920, 921] to send data via HTTP or MQTT[cite: 1002]. 
+// Since we are using real hardware directly connected to the PC, we just read the Serial port directly.
 async function connectSerial() {
     if (port) { alert("Port is already open."); return; }
 
@@ -407,7 +412,8 @@ async function connectSerial() {
                 line = line.trim();
                 if (!line) continue;
 
-// --- INTERCEPT HARDWARE STATE COMMANDS ---
+                // --- INTERCEPT HARDWARE STATE COMMANDS ---
+                // [State Interpretation]: Here we read the specific strings sent by the Glove (like "HAND_DETECTED") to update the user interface.
                 if (line === "HAND_DETECTED") {
                     // Start the UI prep phase
                     statusText.innerText = "Hand detected. Arming system...";
@@ -451,11 +457,13 @@ async function connectSerial() {
                         const dtwScore = calculateMultiDTW(savedTemplate, currentTest);
                         scoreValue.innerText = dtwScore.toFixed(2);
 
+                        // [Validation]: Checking if the DTW score passes our threshold. Similar to the Server returning a "200 OK" status code for a successful request[cite: 246].
                         if (dtwScore < 30.0) {
                             statusText.innerText = `✅ ACCESS GRANTED`;
                             statusText.style.color = "var(--accent2)";
                             scoreValue.className = "score-value ok";
                         } else {
+                            // [Validation Failed]: Denying access. Similar to returning a "400 Bad Request" if the client data is wrong[cite: 246].
                             statusText.innerText = `❌ ACCESS DENIED`;
                             statusText.style.color = "var(--red)";
                             scoreValue.className = "score-value err";
@@ -467,6 +475,8 @@ async function connectSerial() {
                 // FILTER GARBAGE
                 if (/[a-zA-Z]/.test(line)) continue;
 
+                // [Data Parsing]: Extracting the comma-separated string into numbers. 
+                // In a REST API we would normally use JSON and parse it like `request.get_json()`[cite: 326, 653], but CSV is more efficient for this direct serial connection.
                 const vals = line.split(',').map(Number);
                 if (vals.length !== 12 || vals.some(isNaN)) continue;
 
