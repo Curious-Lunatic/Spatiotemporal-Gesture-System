@@ -6,8 +6,12 @@
 // --- CONFIG ---
 bool DEBUG_MODE = false; // false = CSV for dashboard
 
+// This ESP32 is the main sensor hub. 
+// It waits for the Bluetooth signal from the Box. Once received, it reads 12 points of data from your hand and streams them to the laptop via USB Serial.
 BluetoothSerial SerialBT;
 
+// We are using two I2C buses because MPU6050 sensors only have two possible addresses (0x68 and 0x69). 
+// By using two buses, we can connect 4 sensors in total.
 TwoWire I2C_Bus1 = TwoWire(0);
 TwoWire I2C_Bus2 = TwoWire(1);
 Adafruit_MPU6050 imuHand, imuIndex, imuMiddle, imuThumb;
@@ -23,7 +27,7 @@ unsigned long recordStart = 0;
 
 void setup() {
   Serial.begin(115200);
-
+  
   // Bluetooth: Slave role, Box ESP32 connects TO us
   SerialBT.begin("GloveESP");
   Serial.println("[BT] Glove advertising as 'GloveESP'");
@@ -35,7 +39,7 @@ void setup() {
   imuIndex.begin(0x69,  &I2C_Bus1, 0);
   imuMiddle.begin(0x68, &I2C_Bus2, 0);
   imuThumb.begin(0x69,  &I2C_Bus2, 0);
-
+  
   Serial.println("[SYS] Glove ready.");
 }
 
@@ -43,14 +47,15 @@ void loop() {
 
   // ── 1. HANDLE INCOMING BLUETOOTH COMMANDS ──────────────────────────────────
   if (SerialBT.available()) {
-String cmd = SerialBT.readStringUntil('\n');
-cmd.trim();
-cmd.replace("\r", "");
-cmd.replace("\n", "");
+    String cmd = SerialBT.readStringUntil('\n');
+    cmd.trim();
+    cmd.replace("\r", "");
+    cmd.replace("\n", "");
 
     if (cmd == "HAND_PRESENT" && authState == IDLE) {
       authState = ARMED;
       armedAt   = millis();
+      // [Communication]: We tell the Web Dashboard what is happening by printing to the Serial port.
       Serial.println("HAND_DETECTED");
       if (DEBUG_MODE) Serial.println("[AUTH] Hand detected. Arming in 5s...");
     }
@@ -78,16 +83,21 @@ cmd.replace("\n", "");
   // ── 3. READ & STREAM SENSORS ALWAYS ────────────────────────────────────────
   // Streams continuously so the dashboard can calibrate and render the 3D hand.
   // DTW data collection is gated in script.js via isRecordingTemplate/isTesting flags.
+  
+  // Right now, we are pulling the X, Y, and Z acceleration data from all 4 sensors.
+  // Unlike a REST API which uses a standard HTTP POST with JSON , we are using a continuous raw byte stream that we define ourselves.. 
+  // We send data as comma-separated values (CSV) because keeping payloads small is a good practice for microcontrollers due to limited RAM.
   sensors_event_t aH, gH, tH, aI, gI, tI, aM, gM, tM, aT, gT, tT;
 
   imuHand.getEvent(&aH,   &gH,  &tH);
   imuIndex.getEvent(&aI,  &gI,  &tI);
   imuMiddle.getEvent(&aM, &gM,  &tM);
   imuThumb.getEvent(&aT,  &gT,  &tT);
-
+  
   if (DEBUG_MODE) {
     Serial.print("HAND[");  Serial.print(aH.acceleration.x); Serial.print(","); Serial.print(aH.acceleration.y); Serial.print(","); Serial.print(aH.acceleration.z); Serial.print("] ");
-    Serial.print("IDX[");   Serial.print(aI.acceleration.x); Serial.print(","); Serial.print(aI.acceleration.y); Serial.print(","); Serial.print(aI.acceleration.z); Serial.print("] ");
+    Serial.print("IDX[");   Serial.print(aI.acceleration.x); Serial.print(","); Serial.print(aI.acceleration.y); Serial.print(","); Serial.print(aI.acceleration.z);
+    Serial.print("] ");
     Serial.print("MID[");   Serial.print(aM.acceleration.x); Serial.print(","); Serial.print(aM.acceleration.y); Serial.print(","); Serial.print(aM.acceleration.z); Serial.print("] ");
     Serial.print("THM[");   Serial.print(aT.acceleration.x); Serial.print(","); Serial.print(aT.acceleration.y); Serial.print(","); Serial.println(aT.acceleration.z);
   } else {
@@ -105,5 +115,5 @@ cmd.replace("\n", "");
     Serial.println(aT.acceleration.z);
   }
 
-  delay(50); // 20 Hz
+  delay(50); 
 }
